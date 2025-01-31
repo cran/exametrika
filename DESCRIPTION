@@ -1,7 +1,7 @@
 Package: exametrika
 Type: Package
 Title: Test Theory Analysis and Biclustering
-Version: 1.1.0
+Version: 1.2.0
 Authors@R: person("Koji Kosugi",role=c("aut","cre"),
                   email="kosugitti@gmail.com",
                   comment = c(ORCID = "0000-0001-5816-0099"))
@@ -23,13 +23,14 @@ Language: en-US
 Encoding: UTF-8
 LazyData: true
 BuildVignettes: true
+URL: https://kosugitti.github.io/exametrika/
 RoxygenNote: 7.3.2
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
-Depends: R (>= 3.5.0), mvtnorm, igraph
+Depends: R (>= 4.1.0), mvtnorm, igraph
 NeedsCompilation: no
-Packaged: 2024-11-22 07:42:59 UTC; napier3
+Packaged: 2025-01-31 10:07:44 UTC; napier3
 Author: Koji Kosugi [aut, cre] (<https://orcid.org/0000-0001-5816-0099>)
 Maintainer: Koji Kosugi <kosugitti@gmail.com>
 Repository: CRAN
-Date/Publication: 2024-11-22 09:30:02 UTC
+Date/Publication: 2025-01-31 10:20:02 UTC

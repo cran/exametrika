@@ -4,37 +4,45 @@
 #' @param data is a data matrix of the type matrix or data.frame.
 #' @param na na argument specifies the numbers or characters to be treated as missing values.
 #' @param id id indicates the column number containing the examinee ID. The default is 1.
-#' If the answer pattern is contained in the first column, it is treated as if there is no ID vector.
+#' If no ID column is specified or if the specified column contains response data,
+#' sequential IDs ("Student1", "Student2", etc.) will be generated and all columns
+#' will be treated as response data.
 #' @param Z Z is a missing indicator matrix of the type matrix or data.frame
 #' @param w w is item weight vector
+#' @param response.type Character string specifying the type of response data:
+#'   "binary" for dichotomous data,
+#'   "ordinal" for ordered polytomous data,
+#'   "rated" for polytomous data with correct answers,
+#'   "nominal" for unordered polytomous data.
+#'   If NULL (default), the type is automatically detected.
+#' @param CA A numeric vector specifying the correct answers for rated polytomous data.
+#' Required when response.type is "rated".
 #' @return
 #' \describe{
 #' \item{U}{For binary response data. A matrix with rows representing the sample size and columns
 #'  representing the number of items, where elements are either 0 or 1. \eqn{u_{ij}=1} indicates
 #'  that student i correctly answered item j, while \eqn{u_{ij}=0} means that student i answered
-#'  item j incorrectly. If the data contains NA values, any value can be filled in the matrix U,
-#'  represented by the following missing value index matrix Z. However, in this function,
-#'  -1 is assigned.}
+#'  item j incorrectly.}
 #' \item{Q}{For polytomous response data. A matrix with rows representing the sample size and columns
 #'  representing the number of items, where elements are non-negative integers. When input data is
-#'  in factor format, the factor levels are converted to consecutive integers starting from 1, and
-#'  the original factor labels are stored in factor_labels.}
+#'  in factor format, the factor levels are converted to consecutive integers starting from 1.}
 #' \item{ID}{The ID label given by the designated column or function.}
 #' \item{ItemLabel}{The item names given by the provided column names or function.}
 #' \item{Z}{Missing indicator matrix. \eqn{z_{ij}=1} indicates that item j is presented to Student i,
-#' while \eqn{z_{ij}=0} indicates item j is NOT presented to Student i.}
+#' while \eqn{z_{ij}=0} indicates item j is NOT presented to Student i.
+#' If the data contains NA values, -1 is assigned.}
 #' \item{w}{Item weight vector}
 #' \item{response.type}{Character string indicating the type of response data:
-#'  "binary" for binary responses or "polytomous" for polytomous responses.}
-#' \item{factor_labels}{List containing the original factor labels when polytomous responses
+#'  "binary", "ordinal", "rated", or "nominal"}
+#' \item{CategoryLabel}{List containing the original factor labels when polytomous responses
 #'  are provided as factors. NULL if no factor data is present.}
-#' \item{categories}{Numeric vector containing the number of response categories for each item.
-#'  For binary data, all elements are 2.}
+#' \item{categories}{Numeric vector containing the number of response categories for each item.}
+#' \item{CA}{For rated polytomous data, a numeric vector of correct answers. NULL for other types.}
 #' }
 #' @importFrom stats sd
 #' @export
-#'
-dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
+dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL,
+                       response.type = NULL, CA = NULL) {
   # Check if the object is already formatted
   if (inherits(data, "exametrika")) {
     return(data)
@@ -69,15 +77,33 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
 
   # Apply binary check to response columns only, passing na value
   is_all_binary <- all(sapply(data[, check_cols], is_binary, na_value = na))
-  response.type <- if (is_all_binary) "binary" else "polytomous"
+
+  if (is.null(response.type)) {
+    if (is_all_binary) {
+      response.type <- "binary"
+    } else {
+      if (!is.null(CA)) {
+        response.type <- "rated"
+      } else {
+        response.type <- "nominal"
+      }
+    }
+  }
+
+  # Validate manually specified response type
+  if (!response.type %in% c("binary", "ordinal", "rated", "nominal")) {
+    stop("response.type must be one of: binary, ordinal, rated, nominal")
+  }
 
   data <- as.data.frame(unclass(data))
   data[data == na] <- NA
-  # Store factor labels if exists
-  factor_labels <- list()
+
+  # Store factor labels and convert factors to numeric
+  CategoryLabel <- list()
   for (col in names(data)) {
     if (is.factor(data[[col]])) {
-      factor_labels[[col]] <- levels(data[[col]])
+      # Store labels before conversion
+      CategoryLabel[[col]] <- levels(data[[col]])
       # Convert to numeric (starting from 1)
       data[[col]] <- as.numeric(data[[col]])
     }
@@ -87,17 +113,6 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
   if (!is.matrix(data) && !is.data.frame(data)) {
     stop("Data must be matrix or data.frame")
   }
-
-  # get ID vector
-  if (is.null(rownames(data))) {
-    ID <- rownames(data)
-  } else {
-    ID <- data[, id]
-  }
-
-  # Check if first column is data or ID
-  # First, try to convert the ID column to numeric
-  id_numeric <- suppressWarnings(as.numeric(ID))
 
   # Function to check if a vector could be response data
   is_response_data <- function(x) {
@@ -109,12 +124,23 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
       return(FALSE)
     }
 
-    # Check if all non-NA values are numeric
+    # if contains character
+    if (is.character(x)) {
+      return(FALSE)
+    }
     if (!all(suppressWarnings(!is.na(as.numeric(x_clean))))) {
       return(FALSE)
     }
 
     x_num <- suppressWarnings(as.numeric(x_clean))
+
+    if (length(x_num) > 1) {
+      sorted_x <- sort(x_num)
+      if (all(diff(sorted_x) == 1) &&
+        length(unique(x_num)) == length(x_num)) {
+        return(FALSE)
+      }
+    }
 
     if (response.type == "binary") {
       return(all(x_num %in% c(0, 1)))
@@ -123,12 +149,38 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
     }
   }
 
-  # Check if ID column appears to be response data
-  if (is_response_data(ID)) {
-    ID <- paste0("Student", seq(1, NROW(data)))
-    response.matrix <- data
+  # ID processing section
+  if (is.null(rownames(data))) {
+    if (id > ncol(data)) {
+      ID <- paste0("Student", seq(1, NROW(data)))
+      response.matrix <- data
+    } else {
+      # Check if specified column is actually response data
+      potential_id <- data[, id]
+      if (is_response_data(potential_id)) {
+        ID <- paste0("Student", seq(1, NROW(data)))
+        response.matrix <- data
+      } else {
+        ID <- potential_id
+        response.matrix <- data[, -id]
+      }
+    }
   } else {
-    response.matrix <- data[, -id]
+    # Even if rownames exist, check for ID column first
+    if (id <= ncol(data)) {
+      potential_id <- data[, id]
+      if (is_response_data(potential_id)) {
+        ID <- paste0("Student", seq(1, NROW(data)))
+        response.matrix <- data
+      } else {
+        ID <- potential_id
+        response.matrix <- data[, -id]
+      }
+    } else {
+      # Use rownames only if no valid ID column exists
+      ID <- rownames(data)
+      response.matrix <- data
+    }
   }
 
   # Get Item-labels
@@ -160,7 +212,7 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
   }
 
   ### This function finally makes each matrix as follow:
-  # U is a matrix composed solely of 0s,1s and NA.
+  # U is a matrix composed solely of 0s,1s and -1.
   # Z is the missing identifier matrix composed solely of 0s and 1s.
   if (!is.null(na)) {
     ## na value specified
@@ -190,6 +242,37 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
 
   # Add category information
   categories <- apply(response.matrix, 2, function(x) length(unique(x[x != -1])))
+
+  # Process category labels for each item
+  for (i in seq_len(ncol(response.matrix))) {
+    item_name <- ItemLabel[i]
+    column_data <- response.matrix[, i]
+    if (!item_name %in% names(CategoryLabel)) { # If not already processed as factor
+      CategoryLabel[[item_name]] <- generate_category_labels(column_data, item_name)
+    }
+  }
+  CA <- as.vector(unlist(CA))
+  # check correct_answer
+  if (response.type == "rated") {
+    if (is.null(CA)) {
+      stop("Correct Answer must be specified when polytype is rated")
+    }
+    if (length(CA) != ncol(response.matrix)) {
+      stop("length of CA must match number of items")
+    }
+
+    for (i in 1:length(CA)) {
+      if (!CA[i] %in% unique(response.matrix[, i][response.matrix[, i] != -1])) {
+        stop(paste("CA for item", i, "is not a valid response category"))
+      }
+    }
+    U <- matrix(NA, nrow = nrow(response.matrix), ncol = ncol(response.matrix))
+    for (i in 1:nrow(response.matrix)) {
+      U[i, ] <- ifelse(response.matrix[i, ] == CA, 1, 0)
+    }
+  }
+
+
   # Create return list with appropriate matrix name based on response type
   ret.list <- list(
     ID = ID,
@@ -204,10 +287,11 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
     ret.list$U <- response.matrix
   } else {
     ret.list$Q <- response.matrix
-    # Add factor labels only for polytomous data
-    if (length(factor_labels) > 0) {
-      ret.list$factor_labels <- factor_labels
-    }
+    ret.list$CategoryLabel <- CategoryLabel
+    ret.list$CA <- CA
+  }
+  if (response.type == "rated") {
+    ret.list$U <- U
   }
 
   # Return with appropriate class structure
@@ -215,8 +299,7 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
   return(ret)
 }
 
-
-#' @title dataFormat for long-type data
+#' @title Long Format Data Conversion
 #' @description
 #' A function to reshape long data into a dataset suitable for exametrika.
 #' @param data is a data matrix of the type matrix or data.frame. This must
@@ -228,8 +311,14 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
 #' @param Qid Specify the column number containing the Question label vector.
 #' @param Resp Specify the column number containing the Response value vector.
 #' @param w Specify the column number containing the weight vector.
-#' @param response.type type of response data: "binary" or "polytomous" (can be abbreviated as "poly").
-#' If NULL, the type is automatically determined from the data.
+#' @param response.type Character string specifying the type of response data:
+#'   "binary" for dichotomous data,
+#'   "ordinal" for ordered polytomous data,
+#'   "rated" for polytomous data with correct answers,
+#'   "nominal" for unordered polytomous data.
+#'   If NULL (default), the type is automatically detected.
+#' @param CA A numeric vector specifying the correct answers for rated polytomous data.
+#' Required when response.type is "rated".
 #' @return
 #' \describe{
 #' \item{U}{For binary response data. A matrix with rows representing the sample size and columns
@@ -238,26 +327,25 @@ dataFormat <- function(data, na = NULL, id = 1, Z = NULL, w = NULL) {
 #'  item j incorrectly.}
 #' \item{Q}{For polytomous response data. A matrix with rows representing the sample size and columns
 #'  representing the number of items, where elements are non-negative integers. When input data is
-#'  in factor format, the factor levels are converted to consecutive integers starting from 1, and
-#'  the original factor labels are stored in factor_labels.}
+#'  in factor format, the factor levels are converted to consecutive integers starting from 1.}
 #' \item{ID}{The ID label given by the designated column or function.}
 #' \item{ItemLabel}{The item names given by the provided column names or function.}
 #' \item{Z}{Missing indicator matrix. \eqn{z_{ij}=1} indicates that item j is presented to Student i,
 #' while \eqn{z_{ij}=0} indicates item j is NOT presented to Student i.}
 #' \item{w}{Item weight vector}
 #' \item{response.type}{Character string indicating the type of response data:
-#'  "binary" for binary responses or "polytomous" for polytomous responses.}
-#' \item{factor_labels}{List containing the original factor labels when polytomous responses
+#'  "binary", "ordinal", "rated", or "nominal"}
+#' \item{CategoryLabel}{List containing the original factor labels when polytomous responses
 #'  are provided as factors. NULL if no factor data is present.}
-#' \item{categories}{Numeric vector containing the number of response categories for each item.
-#'  For binary data, all elements are 2.}
+#' \item{categories}{Numeric vector containing the number of response categories for each item.}
+#' \item{CA}{For rated polytomous data, a numeric vector of correct answers. NULL for other types.}
 #' }
 #' @export
 #'
-dataFormat.long <- function(data, na = NULL,
-                            Sid = NULL, Qid = NULL,
-                            Resp = NULL, w = NULL,
-                            response.type = NULL) {
+longdataFormat <- function(data, na = NULL,
+                           Sid = NULL, Qid = NULL,
+                           Resp = NULL, w = NULL,
+                           response.type = NULL, CA = NULL) {
   # Check if already formatted
   if (inherits(data, "exametrika")) {
     return(data)
@@ -309,28 +397,49 @@ dataFormat.long <- function(data, na = NULL,
   }
 
   # Process Response vector and determine response type if not specified
-  factor_labels <- NULL
+  CategoryLabel <- NULL
   if (is.factor(Resp_vec)) {
-    factor_labels <- levels(Resp_vec)
+    CategoryLabel <- levels(Resp_vec)
     Resp_vec <- as.numeric(Resp_vec)
   } else {
     Resp_vec <- as.numeric(Resp_vec)
   }
 
   if (is.null(response.type)) {
-    response.type <- if (all(Resp_vec[!is.na(Resp_vec)] %in% c(0, 1))) {
-      "binary"
+    if (all(Resp_vec[!is.na(Resp_vec)] %in% c(0, 1))) {
+      response.type <- "binary"
     } else {
-      "polytomous"
+      response.type <- if (!is.null(CA)) "rated" else "nominal"
     }
   } else {
-    response.type <- match.arg(response.type, c("binary", "polytomous", "poly"))
-    if (response.type == "poly") response.type <- "polytomous"
+    response.type <- match.arg(
+      response.type,
+      c("binary", "ordinal", "rated", "nominal")
+    )
   }
 
   # Validate responses based on response_type
-  if (response.type == "binary" && !all(Resp_vec[!is.na(Resp_vec)] %in% c(0, 1))) {
+  if (response.type == "binary" &&
+    !all(Resp_vec[!is.na(Resp_vec)] %in% c(0, 1))) {
     stop("Binary response type specified but data contains non-binary values")
+  }
+
+  if (response.type == "rated") {
+    if (is.null(CA)) {
+      stop("CA must be specified when response.type is rated")
+    }
+    # Verify CA length matches number of unique items
+    if (length(CA) != length(unique(Qid_vec))) {
+      stop("Length of CA must match number of items")
+    }
+    # Verify each CA is a valid response category
+    for (i in seq_along(CA)) {
+      item_responses <- unique(Resp_vec[Qid_num == i])
+      item_responses <- item_responses[!is.na(item_responses)]
+      if (!CA[i] %in% item_responses) {
+        stop(paste("CA for item", i, "is not a valid response category"))
+      }
+    }
   }
 
   # Create response matrix
@@ -378,8 +487,11 @@ dataFormat.long <- function(data, na = NULL,
     ret_list$U <- response_matrix
   } else {
     ret_list$Q <- response_matrix
-    if (!is.null(factor_labels)) {
-      ret_list$factor_labels <- list(response = factor_labels)
+    if (!is.null(CategoryLabel)) {
+      ret_list$CategoryLabel <- list(response = CategoryLabel)
+    }
+    if (!is.null(CA)) {
+      ret_list$CA <- CA
     }
   }
 

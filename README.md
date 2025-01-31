@@ -1,5 +1,6 @@
 
-# exametrika
+# exametrika <img src="man/figures/sticker.png" align="right" height="139" />
+
 
 ## Overview
 
@@ -142,7 +143,7 @@ Note: Some analysis methods may have specific data type requirements. Please ref
 
 ### Data Formatting
 
-The `dataFormat` function preprocesses input data for analysis:
+The `dataFormat` function processes input data before analysis:
 
 - **Functions**
   - Extracts and validates ID vectors if present
@@ -600,7 +601,7 @@ write.csv(edges_data, file = edgeFile, row.names = FALSE)
 
 The model requires three components:
 
-1. Field assignments for items (conf vector)
+1. Field assignments for items (vector from configuration file)
 2. Network structure between classes for each field
 3. Number of classes and fields
 
@@ -706,7 +707,6 @@ Shojima, Kojiro (2022) Test Data Engineering: Latent Rank Analysis, Biclustering
 - Item Response Theory
   - Graded Response Model (GRM)
   - Partial Credit Model (PCM)
-  - Generalized Partial Credit Model (GPCM)
 - Latent Structure Analysis
   - Polytomous Latent Rank Model
   - Polytomous Latent Class Analysis
