@@ -1,34 +1,68 @@
-#' @title print.exametrika
+#' @title Print Method for Exametrika Objects
 #' @description
-#' Output format for exametrika Class
-#' @param x exametrika Class object
-#' @param digits printed digits
-#' @param ... other options
+#' S3 method for printing objects of class "exametrika". This function formats and displays
+#' appropriate summary information based on the specific subclass of the exametrika object.
+#' Different types of analysis results (IRT, LCA, network models, etc.) are presented
+#' with customized formatting to highlight the most relevant information.
+#'
+#' @param x An object of class "exametrika" with various possible subclasses
+#' @param digits Integer indicating the number of decimal places to display. Default is 3.
+#' @param ... Additional arguments passed to print methods (not currently used)
+#'
+#' @details
+#' The function identifies the specific subclass of the exametrika object and tailors the
+#' output accordingly. For most analysis types, the function displays:
+#'
+#' * Basic model description and parameters
+#' * Estimation results (e.g., item parameters, latent class profiles)
+#' * Model fit statistics and diagnostics
+#' * Visual representations where appropriate (e.g., graphs for network models, scree plots
+#'   for dimensionality analysis)
+#'
+#' When printing network-based models (LDLRA, LDB, BINET), this function visualizes
+#' the network structure using graphs, which can help in interpreting complex relationships
+#' between items or latent variables.
+#'
+#' @return
+#' Prints a formatted summary of the exametrika object to the console, with content
+#' varying by object subclass:
+#'
+#' \describe{
+#'   \item{TestStatistics}{Basic descriptive statistics of the test}
+#'   \item{Dimensionality}{Eigenvalue analysis results with scree plot}
+#'   \item{ItemStatistics}{Item-level statistics and psychometric properties}
+#'   \item{QitemStatistics}{Item statistics for polytomous items}
+#'   \item{exametrikaData}{Data structure details including response patterns and weights}
+#'   \item{IIAnalysis}{Item-item relationship measures (tetrachoric correlations, etc.)}
+#'   \item{CTT}{Classical Test Theory reliability measures}
+#'   \item{IRT/GRM}{Item parameters, ability estimates, and fit indices}
+#'   \item{LCA/LRA}{Class/Rank profiles, distribution information, and model fit statistics}
+#'   \item{Biclustering/IRM}{Cluster profiles, field distributions, and model diagnostics}
+#'   \item{LDLRA/LDB/BINET}{Network visualizations, parameter estimates, and conditional probabilities}
+#' }
+#'
+#' @examples
+#' \donttest{
+#' # Print IRT analysis results with 4 decimal places
+#' result <- IRT(J15S500)
+#' print(result, digits = 4)
+#'
+#' # Print Latent Class Analysis results
+#' result_lca <- LCA(J15S500, ncls = 3)
+#' print(result_lca)
+#' }
+#'
 #' @importFrom utils tail
-#' @importFrom igraph plot.igraph
-#' @importFrom igraph layout_on_grid
-#' @importFrom igraph layout_with_fr
-#' @importFrom igraph E
-#' @return Prints a formatted summary of the exametrika object to the console, with content
-#'   varying by object class:
-#'   \describe{
-#'     \item{TestStatistics}{Basic descriptive statistics of the test}
-#'     \item{Dimensionality}{Eigenvalue analysis results with scree plot}
-#'     \item{ItemStatistics}{Item-level statistics}
-#'     \item{CTT}{Classical Test Theory reliability measures}
-#'     \item{IRT}{Item parameters and fit indices}
-#'     \item{LCA/LRA}{Class/Rank profiles and model fit information}
-#'     \item{Biclustering/IRM}{Cluster profiles and model diagnostics}
-#'     \item{Network models (LDLRA/LDB/BINET)}{Network visualizations and parameter estimates}
-#'   }
+#' @importFrom igraph plot.igraph layout_on_grid layout_with_fr E
 #' @export
+#'
 
 print.exametrika <- function(x, digits = 3, ...) {
   value <- if (length(class(x)) > 1) tail(class(x), 1) else "all"
 
   switch(value,
     TestStatistics = {
-      cat("Test Statics\n")
+      cat("Test Statistics\n")
       tmp <- as.data.frame(unlist(x))
       colnames(tmp) <- "value"
       print(tmp)
@@ -44,18 +78,18 @@ print.exametrika <- function(x, digits = 3, ...) {
       xdim <- x$Component
       ydim <- x$Eigenvalue
       plot(xdim, ydim,
-        xlab = "Number of Components",
+        xlab = "Number of Eigenvalues",
         ylab = "Eigenvalue", type = "b"
       )
     },
     ItemStatistics = {
-      cat("Item Statics\n")
+      cat("Item Statistics\n")
       tmp <- as.data.frame(unclass(x))
       rownames(tmp) <- NULL
       print(tmp, digits = digits)
     },
     QitemStatistics = {
-      cat("Item Statics\n")
+      cat("Item Statistics\n")
       tmp <- as.data.frame(unclass(x))
       rownames(tmp) <- NULL
       print(tmp, digits = digits)
@@ -85,8 +119,10 @@ print.exametrika <- function(x, digits = 3, ...) {
     IIAnalysis = {
       cat("Joint Sample Size\n")
       print(x$JSS, digits = digits)
-      cat("\nJoint Correct Response Rate\n")
+      cat("\nJoint Correct Response Ratio\n")
       print(x$JCRR, digits = digits)
+      cat("\nConditonal Correct Response Ratio\n")
+      print(x$CCRR, digits = digits)
       cat("\nItem Lift\n")
       print(x$IL, digits = digits)
       cat("\nMutual Information\n")
@@ -95,6 +131,18 @@ print.exametrika <- function(x, digits = 3, ...) {
       print(x$Phi, digits = digits)
       cat("\nCorrelation Matrix\n")
       print(x$Tetrachoric, digits = digits)
+    },
+    IIAnalysis.ordinal = {
+      cat("Joint Sample Size\n")
+      print(x$JSS, digits = digits)
+      cat("\nJoint Selection Rateio\n")
+      print(x$JSR, digits = digits)
+      cat("\nConditonal Selection Ratio\n")
+      print(x$JSR, digits = digits)
+      cat("\nMutual Information\n")
+      print(x$MI, digits = digits)
+      cat("\nCorrelation Matrix\n")
+      print(x$Polychoric, digits = digits)
     },
     CTT = {
       cat("Realiability\n")
@@ -110,6 +158,19 @@ print.exametrika <- function(x, digits = 3, ...) {
       cat("Item Parameters\n")
       y <- cbind(x$params, x$itemPSD)
       print(y, digits = digits)
+      cat("\nItem Fit Indices\n")
+      y <- unclass(x$ItemFitIndices)
+      y <- as.data.frame(y)
+      print(round(y, digits))
+      cat("\nModel Fit Indices\n")
+      y <- unclass(x$TestFitIndices)
+      y <- t(as.data.frame(y))
+      colnames(y) <- "value"
+      print(round(y, digits))
+    },
+    GRM = {
+      cat("Item Parameter\n")
+      print(x$params, digits = digits)
       cat("\nItem Fit Indices\n")
       y <- unclass(x$ItemFitIndices)
       y <- as.data.frame(y)
@@ -145,7 +206,7 @@ print.exametrika <- function(x, digits = 3, ...) {
       print(round(y, digits))
     },
     LRA = {
-      cat(paste("estimating method is ", x$method))
+      cat(paste("estimating method is ", x$method, "\n"))
       if (x$mic) {
         cat("\n Monotonic increasing IRP option is TRUE.\n")
       }
@@ -154,20 +215,80 @@ print.exametrika <- function(x, digits = 3, ...) {
       cat("\nItem Reference Profile Indices\n")
       print(x$IRPIndex, digits = digits)
       cat("\nTest Profile\n")
-      y <- rbind(x$TRP, x$LCD, x$CMD)
+      y <- rbind(x$TRP, x$LRD, x$RMD)
       rownames(y) <- c(
         "Test Reference Profile",
-        "Latent Class Ditribution",
-        "Class Membership Distribution"
+        "Latent Rank Ditribution",
+        "Rank Membership Distribution"
       )
-      colnames(y) <- paste("Class", 1:x$Nclass)
+      colnames(y) <- paste("Rank", 1:x$Nrank)
       print(round(y, digits))
       cat("\nItem Fit Indices\n")
       y <- unclass(x$ItemFitIndices)
       y <- as.data.frame(y)
       print(round(y, digits))
       cat("\nModel Fit Indices\n")
-      cat(paste("Number of Latent class:", x$Nclass))
+      cat(paste("Number of Latent rank:", x$Nrank))
+      cat(paste("\nNumber of EM cycle:", x$N_Cycle, "\n"))
+      y <- unclass(x$TestFitIndices)
+      y <- t(as.data.frame(y))
+      colnames(y) <- "value"
+      print(round(y, digits))
+    },
+    LRAordinal = {
+      if (x$mic) {
+        cat("\n Monotonic increasing IRP option is TRUE.\n")
+      }
+      print(x$ScoreReport, digits = digits)
+      print(x$ItemReport, digits = digits)
+      cat("Item Category Reference Profile\n")
+      print(x$ICRP, digits = digits)
+      cat("\nTest Profile\n")
+      y <- rbind(x$TRP, x$LRD, x$RMD)
+      rownames(y) <- c(
+        "Test Reference Profile",
+        "Latent Rank Ditribution",
+        "Rank Membership Distribution"
+      )
+      colnames(y) <- paste("Rank", 1:x$Nrank)
+      print(round(y, digits))
+      cat("\nItem Fit Indices\n")
+      y <- unclass(x$ItemFitIndices)
+      y <- as.data.frame(y)
+      print(round(y, digits))
+      cat("\nModel Fit Indices\n")
+      cat(paste("Number of Latent rank:", x$Nrank))
+      cat(paste("\nNumber of EM cycle:", x$N_Cycle, "\n"))
+      y <- unclass(x$TestFitIndices)
+      y <- t(as.data.frame(y))
+      colnames(y) <- "value"
+      print(round(y, digits))
+    },
+    LRArated = {
+      if (x$mic) {
+        cat("\n Monotonic increasing IRP option is TRUE.\n")
+      }
+      print(x$ScoreReport, digits = digits)
+      print(x$ItemReport, digits = digits)
+      cat("Item Quantile Reference Matrix\n")
+      print(x$ItemQuantileRef, digits = digits)
+      cat("Item Category Reference Profile\n")
+      print(x$ICRP, digits = digits)
+      cat("\nTest Profile\n")
+      y <- rbind(x$TRP, x$LRD, x$RMD)
+      rownames(y) <- c(
+        "Test Reference Profile",
+        "Latent Rank Ditribution",
+        "Rank Membership Distribution"
+      )
+      colnames(y) <- paste("Rank", 1:x$Nrank)
+      print(round(y, digits))
+      cat("\nItem Fit Indices\n")
+      y <- unclass(x$ItemFitIndices)
+      y <- as.data.frame(y)
+      print(round(y, digits))
+      cat("\nModel Fit Indices\n")
+      cat(paste("Number of Latent rank:", x$Nrank))
       cat(paste("\nNumber of EM cycle:", x$N_Cycle, "\n"))
       y <- unclass(x$TestFitIndices)
       y <- t(as.data.frame(y))
@@ -203,14 +324,12 @@ print.exametrika <- function(x, digits = 3, ...) {
       colnames(y) <- paste(msg2, 1:x$Nclass)
       print(round(y, digits))
 
-      if (x$model == 2) {
-        cat("\nField Membership Profile\n")
-        y <- format(
-          round(as.data.frame(x$FieldMembership), digits),
-          nsmall = digits
-        )
-        print(y)
-      }
+      cat("\nField Membership Profile\n")
+      y <- format(
+        round(as.data.frame(x$FieldAnalysis), digits),
+        nsmall = digits
+      )
+      print(y)
 
       cat("Latent Field Distribution\n")
       y <- matrix(x$LFD, byrow = T, nrow = 1)
@@ -231,19 +350,6 @@ print.exametrika <- function(x, digits = 3, ...) {
       if (x$WOACflg) {
         cat("Weakly Ordinal Alignment Condition is Satisfied.\n")
       }
-    },
-    FieldAnalysis = {
-      cat("Field Analysis Matrix\n")
-      nr <- NROW(x$FieldAnalysisMatrix)
-      nc <- NCOL(x$FieldAnalysisMatrix)
-      rnames <- rownames(x$FieldAnalysisMatrix)
-      cnames <- colnames(x$FieldAnalysisMatrix)
-      yy <- x$FieldAnalysisMatrix
-      crr <- round(yy[, 1], digits)
-      LFE <- yy[, 2]
-      Fields <- round(yy[, -(1:2)], digits)
-      y <- cbind(crr, LFE, Fields)
-      print(y)
     },
     IRM = {
       cat(paste("Bicluster Reference Matrix\n"))
@@ -392,7 +498,7 @@ print.exametrika <- function(x, digits = 3, ...) {
       ycoord <- lay.tree[, 2]
       xcoord <- xcoord[order(rowSums(x$adj_list[[1]]))]
       ycoord <- ycoord[order(colSums(x$adj_list[[1]]))]
-      for (i in 1:x$Nclass) {
+      for (i in 1:x$Nrank) {
         plot.igraph(x$g_list[[i]],
           layout = cbind(xcoord, ycoord),
           main = paste("Graph at Rank", i)
@@ -400,7 +506,7 @@ print.exametrika <- function(x, digits = 3, ...) {
       }
 
       cat("\nParameter Learning\n")
-      for (i in 1:x$Nclass) {
+      for (i in 1:x$Nrank) {
         tbl <- x$IRP[i, , ]
         tbl[tbl == 0] <- NA
         rownames(tbl) <- x$FieldLabel
@@ -420,7 +526,7 @@ print.exametrika <- function(x, digits = 3, ...) {
         "Latent Rank Ditribution",
         "Rank Membership Dsitribution"
       )
-      colnames(y) <- paste("Rank", 1:x$Nclass)
+      colnames(y) <- paste("Rank", 1:x$Nrank)
       print(round(y, digits))
 
       cat("\nLatent Field Distribution\n")

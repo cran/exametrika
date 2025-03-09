@@ -168,25 +168,30 @@ PSD_item_params <- function(model, Lambda, quadrature, marginal_posttheta) {
 #' # Display the first few rows of estimated student abilities
 #' head(result.IRT$ability)
 #'
-#' # Plot Item Characteristic Curves (ICC) for items 1-6 in a 2x3 grid
-#' plot(result.IRT, type = "ICC", items = 1:6, nc = 2, nr = 3)
+#' # Plot Item Response Function (IRF) for items 1-6 in a 2x3 grid
+#' plot(result.IRT, type = "IRF", items = 1:6, nc = 2, nr = 3)
 #'
-#' # Plot Item Information Curves (IIC) for items 1-6 in a 2x3 grid
-#' plot(result.IRT, type = "IIC", items = 1:6, nc = 2, nr = 3)
+#' # Plot Item Information Function (IIF) for items 1-6 in a 2x3 grid
+#' plot(result.IRT, type = "IIF", items = 1:6, nc = 2, nr = 3)
 #'
-#' # Plot the Test Information Curve (TIC) for all items
-#' plot(result.IRT, type = "TIC")
+#' # Plot the Test Information Function (TIF) for all items
+#' plot(result.IRT, type = "TIF")
 #' }
 #' @export
 #'
 
 IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
   # data format
-  if (class(U)[1] != "exametrika") {
+  if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
+
+  if (U$response.type != "binary") {
+    response_type_error(U$response.type, "IRT")
+  }
+
   U <- tmp$U * tmp$Z
 
   rho <- exametrika::ItemTotalCorr(U)
@@ -327,9 +332,6 @@ IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
       )
     }
   }
-  if (verbose) {
-    message("")
-  }
 
   #### Warning
   if (sum(paramset[, 1] > 10) > 0) {
@@ -389,6 +391,7 @@ IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
   EAP <- data.frame(EAP)
   PSD <- data.frame(PSD)
   theta <- cbind(tmp$ID, EAP, PSD)
+  colnames(theta) <- c("ID", "EAP", "PSD")
 
   ret <- structure(list(
     model = model,

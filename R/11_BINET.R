@@ -96,7 +96,7 @@
 #'
 #' # Fit Bicluster Network Model
 #' result.BINET <- BINET(
-#'   U = J35S515,
+#'   J35S515,
 #'   ncls = 13, # Maximum class number from edges (13)
 #'   nfld = 12, # Maximum field number from conf (12)
 #'   conf = conf, # Field configuration vector
@@ -133,11 +133,16 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
                   g_list = NULL, adj_list = NULL, adj_file = NULL,
                   verbose = FALSE) {
   # data format
-  if (class(U)[1] != "exametrika") {
+  if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
+
+  if (U$response.type != "binary") {
+    response_type_error(U$response.type, "BINET")
+  }
+
   U <- tmp$U * tmp$Z
   testlength <- NCOL(tmp$U)
   nobs <- NROW(tmp$U)
@@ -228,7 +233,7 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
 
   # get the Biclustering structure
   ret.Biclustering <- Biclustering(
-    U = tmp$U, Z = tmp$Z, w = tmp$w,
+    tmp,
     ncls = ncls,
     nfld = nfld,
     conf = conf,

@@ -180,6 +180,11 @@ Available datasets:
 - J20S400: Medium dataset (20 items, 400 examinees)
 - J35S515: Large item dataset (35 items, 515 examinees)
   - Used in Biclustering and network model examples
+- J15S3810: Ordinal scale dataset (15 items with 4-point scale, 3810 examinees)
+  - Used in ordinal latent rank model examples
+- J35S5000: Multiple-choice dataset (35 items, 5000 examinees)
+  - Includes both response categories and correct answer data
+  - Used in nominal scale latent rank model examples
 
 ## Examples
 
@@ -216,15 +221,34 @@ head(result.IRT$ability)
 ```
 
 
-The plots offer options for Item Characteristic Curves (ICC), Item Information Curves (IIC), and Test Information Curves (TIC), which can be specified through options. Items can be specified using the `items` argument, and if not specified, plots will be drawn for all items. The number of rows and columns for dividing the plotting area can be specified using `nr` and `nc`, respectively.
+The plots offer options for Item Response Function(also known as Item Characteristic Curves (ICC)),Test Response Function, Item Information Curves (IIC), and Test Information Curves (TIC), which can be specified through options. Items can be specified using the `items` argument, and if not specified, plots will be drawn for all items. The number of rows and columns for dividing the plotting area can be specified using `nr` and `nc`, respectively.
 
 ```{r plot-irt-curves, fig.width=7, fig.height=5, message=FALSE, warning=FALSE}
-plot(result.IRT, type = "ICC", items = 1:6, nc = 2, nr = 3)
+plot(result.IRT, type = "IRF", items = 1:6, nc = 2, nr = 3)
+plot(result.IRT, type = "IRF", overlay = TRUE)
 plot(result.IRT, type = "IIC", items = 1:6, nc = 2, nr = 3)
+plot(result.IRT, type = "TRF")
 plot(result.IRT, type = "TIC")
 ```
 
-### LCA Example
+### GRM: IRT for Polytomous Cases
+
+The Graded Response Model (Samejima, 1969) can be considered an extension of IRT to polytomous response models. In this package, it can be implemented using the GRM function. However, the estimation accuracy is somewhat inferior to packages such as ltm, so it might be better to use different packages for more sophisticated analyses.
+
+```{r GRM, message=FALSE,warning = FALSE}
+result.GRM <- GRM(J5S1000)
+result.GRM
+```
+
+Similar output to IRT is also possible.
+
+```{r GRM plot}
+plot(result.GRM, type = "IRF")
+plot(result.GRM, type = "IIF")
+plot(result.GRM, type = "TIF")
+```
+
+### LCA
 
 Latent Class Analysis requires specifying the dataset and the number of classes.
 
@@ -248,7 +272,7 @@ plot(result.LCA, type = "TRP")
 plot(result.LCA, type = "LCD")
 ```
 
-### LRA Example
+### LRA
 
 Latent Rank Analysis requires specifying the dataset and the number of classes.
 
@@ -270,22 +294,83 @@ plot(result.LRA, type = "TRP")
 plot(result.LRA, type = "LRD")
 ```
 
+### LRA for ordinal data
+
+LRA can also be applied to ordinal scale data. The sample dataset J15S3810 contains responses to 15 items on a 4-point scale, which we'll classify into 3 ranks. The mic option enforces monotonic increasing constraints.
+
+```{r}
+result.LRAord <- LRA(J15S3810, nrank = 3, mic = TRUE)
+```
+
+We can visualize the relationship between total scores from the ordinal scale and estimated ranks. ScoreFreq plots a frequency polygon of scores with rank thresholds, while ScoreRank shows the relationship between scores and rank membership probabilities as a heatmap.
+
+```{r}
+plot(result.LRAord, type = "ScoreFreq")
+plot(result.LRAord, type = "ScoreRank")
+```
+
+The relationship between items and ranks can be visualized in two complementary ways using ICBR and ICRP plots. These visualizations help understand how items function across different ranks:
+
++ ICBR (Item Category Boundary Reference) shows the cumulative probability curves for each category threshold. For each item, these lines represent the probability of scoring at or above each category boundary across ranks.
++ ICRP (Item Category Response Profile) displays the probability of selecting each response category across ranks. These lines show how response patterns change as rank increases.
+
+```{r ICBR/ICRP plot}
+plot(result.LRAord, type = "ICBR", items = 1:4, nc = 2, nr = 2)
+plot(result.LRAord, type = "ICRP", items = 1:4, nc = 2, nr = 2)
+```
+
+Similar to binary data output, we can examine individual examinee characteristics through rank membership probability plots. This visualization shows the probability distribution of rank membership for each examinee, allowing us to understand the certainty of rank classifications. For the first 15 examinees in the dataset:
+
+```{r}
+plot(result.LRAord, type = "RMP", students = 1:9, nc = 3, nr = 3)
+```
+
+Note: The layout parameters nc = 3 and nr = 5 control the arrangement of plots in a 3-column by 5-row grid, making it easier to compare multiple items or examinees simultaneously.
+
+### LRA for rated data
+
+If you have data where respondents select the correct answer from multiple choices, like in a multiple-choice test (nominal scale level), you can analyze it using LRA.
+
+```{r LRArated}
+result.LRArated <- LRA(J35S5000, nrank = 10, mic = TRUE)
+```
+
+You can visualize the relationship between scores and ranks, just like with ordinal scale data.
+
+```{r LRArated ScoreFreq}
+plot(result.LRArated, type = "ScoreFreq")
+plot(result.LRArated, type = "ScoreRank")
+```
+
+You can also visualize the relationship between latent ranks and items, or the probability of subjects belonging to certain ranks.
+
+```{r LRAratedplot}
+plot(result.LRArated, type = "ICRP", items = 1:4, nc = 2, nr = 2)
+```
+
+```{r LRAratedplot2 RMP}
+plot(result.LRAord, type = "RMP", students = 1:9, nc = 3, nr = 3)
+```
+
 ### Biclustering/Ranklustering
 
 Biclustering and Ranklustering algorithms are almost the same, differing only in whether they include a filtering matrix or not. The difference is specified using the `method` option in the `Biclustering()` function. For more details, please refer to the help documentation.
 
 ```{r}
+## Biclustering
 Biclustering(J35S515, nfld = 5, ncls = 6, method = "B")
 ```
 
-
 ```{r}
+## Ranklustering
 result.Ranklustering <- Biclustering(J35S515, nfld = 5, ncls = 6, method = "R")
 plot(result.Ranklustering, type = "Array")
 plot(result.Ranklustering, type = "FRP", nc = 2, nr = 3)
+plot(result.Ranklustering, type = "RRV")
 plot(result.Ranklustering, type = "RMP", students = 1:9, nc = 3, nr = 3)
 plot(result.Ranklustering, type = "LRD")
 ```
+
 
 To find the optimal number of classes and the optimal number of fields, the Infinite Relational Model is available.
 
@@ -648,19 +733,39 @@ plot(result.BINET, type = "LDPSR", nc = 3, nr = 2)
 ```
 
 
-### Table of Model and Plotting Option Correspondence
+### Available Output Types by Model
 
-| Model/Type | IIC | ICC | TIC | IRP | FRP | TRP | LCD/LRD | CMP/RMP | Array | FieldPIRP | LDPSR |
-|------------|:---:|:---:|:---:|:---:|:---:|:---:|:-------:|:-------:|:-----:|:---------:|:-----:|
-| IRT            |  ◯  |  ◯  |  ◯  |     |     |     |         |         |       |           |       |
-| LCA            |     |     |     |  ◯  |  ◯  |  ◯  |    ◯    |    ◯    |       |           |       |
-| LRA            |     |     |     |  ◯  |  ◯  |  ◯  |    ◯    |    ◯    |       |           |       |
-| Biclustering   |     |     |     |  ◯  |  ◯  |  ◯  |    ◯    |    ◯    |   ◯   |           |       |
-| IRM            |     |     |     |     |  ◯  |  ◯  |         |         |   ◯   |           |       |
-| LDLRA          |     |     |     |  ◯  |     |     |    ◯    |    ◯    |       |           |       |
-| LDB            |     |     |     |     |  ◯  |  ◯  |    ◯    |    ◯    |   ◯   |     ◯     |       |
-| BINET          |     |     |     |     |  ◯  |  ◯  |    ◯    |    ◯    |   ◯   |           |   ◯   |
+#### Pattern Analysis
 
+| Model | IRP | FRP | TRP | ICRP | C/R RV |
+|-------|:---:|:---:|:---:|:----:|:----:|
+| IRT | | | | | |
+| LCA | ✓ | ✓ | ✓ | | |
+| LRA | ✓ | ✓ | ✓ | | |
+| LRAordinal | | | | ✓ | |
+| LRArated | | | | ✓ | |
+| Biclustering |  | ✓ | ✓ | |✓ | |
+| IRM | | ✓ | ✓ | | |
+| LDLRA | ✓ | | | | |
+| LDB | | ✓ | ✓ | | |
+| BINET | | ✓ | ✓ | | |
+
+#### Diagnostics & Visualization
+
+| Model | LCD/LRD | CMP/RMP | Array | Other |
+|-------|:--------:|:--------:|:-----:|-------|
+| IRT | | | | IIC, ICC, TIC |
+| LCA | ✓ | ✓ | | |
+| LRA | ✓ | ✓ | | |
+| LRAordinal |  | ✓ | | | ICBR,ScoreFreq, ScoreRank |
+| LRArated |  | ✓ | | | ScoreFreq, ScoreRank |
+| Biclustering | ✓ | ✓ | ✓ | |
+| IRM | | | ✓ | |
+| LDLRA | ✓ | ✓ | | |
+| LDB | ✓ | ✓ | ✓ | FieldPIRP |
+| BINET | ✓ | ✓ | ✓ | LDPSR |
+
+Note: ✓ indicates available output type for the model.
 
 ## Community and Support
 
@@ -696,7 +801,8 @@ Please check our existing Issues and Discussions before posting to avoid duplica
 
 ## Reference
 
-Shojima, Kojiro (2022) Test Data Engineering: Latent Rank Analysis, Biclustering, and Bayesian Network (Behaviormetrics: Quantitative Approaches to Human Behavior, 13),Springer.
++ Shojima, Kojiro (2022) Test Data Engineering: Latent Rank Analysis, Biclustering, and Bayesian Network (Behaviormetrics: Quantitative Approaches to Human Behavior, 13),Springer.
++ Samejima, F. (1969). Estimation of latent ability using a response pattern of graded scores. Psychometrika, 34(S1), 1-97.
 
 ## Future Updates
 
@@ -705,18 +811,15 @@ Shojima, Kojiro (2022) Test Data Engineering: Latent Rank Analysis, Biclustering
 #### Polytomous Data Support
 
 - Item Response Theory
-  - Graded Response Model (GRM)
   - Partial Credit Model (PCM)
 - Latent Structure Analysis
-  - Polytomous Latent Rank Model
-  - Polytomous Latent Class Analysis
   - Extended Biclustering for polytomous data
 
 ### Current Development Status
 
 - Binary response models: ✅ Implemented
 - Polytomous response models: 🚧 Under development
-- CRAN submission: 🚧 In review
+- CRAN submission: ✅  Now on CRAN!
 
 Follow our [GitHub repository](https://github.com/kosugitti/exametrika) and join the [Discussions](https://github.com/kosugitti/exametrika/discussions) to stay updated on development progress and provide feedback on desired features.
 

@@ -2,18 +2,33 @@
 % Please edit documentation in R/02_TestItemFunctions.R
 \name{MutualInformation}
 \alias{MutualInformation}
+\alias{MutualInformation.default}
+\alias{MutualInformation.binary}
+\alias{MutualInformation.ordinal}
 \title{Mutual Information}
 \usage{
-MutualInformation(U, na = NULL, Z = NULL, w = NULL)
+MutualInformation(U, na = NULL, Z = NULL, w = NULL, base = 2)
+
+\method{MutualInformation}{default}(U, na = NULL, Z = NULL, w = NULL, base = 2)
+
+\method{MutualInformation}{binary}(U, na = NULL, Z = NULL, w = NULL, base = 2)
+
+\method{MutualInformation}{ordinal}(U, na = NULL, Z = NULL, w = NULL, base = 2)
 }
 \arguments{
-\item{U}{U is a data matrix of the type matrix or data.frame.}
+\item{U}{Either an object of class "exametrika" or raw data. When raw data is given,
+it is converted to the exametrika class with the \code{\link{dataFormat}} function.}
 
-\item{na}{na argument specifies the numbers or characters to be treated as missing values.}
+\item{na}{Values to be treated as missing values.}
 
-\item{Z}{Z is a missing indicator matrix of the type matrix or data.frame}
+\item{Z}{Missing indicator matrix of type matrix or data.frame. Values of 1 indicate
+observed responses, while 0 indicates missing data.}
 
-\item{w}{w is item weight vector}
+\item{w}{Item weight vector specifying the relative importance of each item.}
+
+\item{base}{The base for the logarithm. Default is 2. For polytomous data,
+you can use "V" to set the base to min(rows, columns), "e" for natural logarithm (base e),
+or any other number to use that specific base.}
 }
 \value{
 A matrix of mutual information values with exametrika class.
@@ -22,9 +37,29 @@ measured in bits. Higher values indicate stronger interdependence between items.
 }
 \description{
 Mutual Information is a measure that represents the degree of interdependence
-between two items. This function is applicable only to binary response data.
+between two items. This function is applicable to both binary and polytomous response data.
 The measure is calculated using the joint probability distribution of responses
 between item pairs and their marginal probabilities.
+}
+\details{
+For binary data, the following formula is used:
+\deqn{
+MI_{jk} = p_{00} \log_2 \frac{p_{00}}{(1-p_j)(1-p_k)} + p_{01} \log_2 \frac{p_{01}}{(1-p_j)p_k}
+ + p_{10} \log_2 \frac{p_{10}}{p_j(1-p_k)} + p_{11} \log_2 \frac{p_{11}}{p_jp_k}
+}
+Where:
+\itemize{
+\item \eqn{p_{00}} is the joint probability of incorrect responses to both items j and k
+\item \eqn{p_{01}} is the joint probability of incorrect response to item j and correct to item k
+\item \eqn{p_{10}} is the joint probability of correct response to item j and incorrect to item k
+\item \eqn{p_{11}} is the joint probability of correct responses to both items j and k
+}
+
+For polytomous data, the following formula is used:
+\deqn{MI_{jk} = \sum_{j=1}^{C_j}\sum_{k=1}^{C_k}p_{jk}\log \frac{p_{jk}}{p_{j.}p_{.k}}}
+
+The base of the logarithm can be the number of rows, number of columns, min(rows, columns),
+base-10 logarithm, natural logarithm (e), etc.
 }
 \note{
 This function is implemented using a binary data compatibility wrapper and

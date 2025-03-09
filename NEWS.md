@@ -1,3 +1,41 @@
+# exameterika 1.5.5 on March 8, 2025
+
++ Field analysis for Biclustering is included in the Biclustering() function
++ Class/Rank Reference Vector plot is now available.
+
+
+# exametrika 1.5.0 on March 5, 2025
+
++ New function GRM is available!
+
+# exametrika 1.4.4 on March 3, 2025
+
++ In Exametrika 1.4.1, bug fixes were made.
++ In 1.4.2, it became possible to calculate polychoric correlation and polyserial correlation.
++ In 1.4.3, item analysis for polytomous items became available.
++ In 1.4.4, we renamed "ICC" to "IRF," although they refer to the same concept (Item Characteristic Curves and Item Response Functions are interchangeable terms). 
+The function will interpret "ICC" input as "IRF" automatically. Additionally, Test Response Function (TRF) output was also made available.
+
+# exametrika 1.4.0 on Feb 25, 2025
+
++ New function LRA() now supports rated data
++ Hex icon available
+
+# exametrika 1.3.0 on Feb 11, 2025
+
+* Added implementation of latent rank model for ordinal scale data
+
++ New function LRA() now supports ordinal response data
+  + Added visualization methods for ordinal scale analysis:
+    + Score frequency with rank thresholds (ScoreFreq)
+    + Score-rank probability heatmap (ScoreRank)
+    + Item category boundary reference (ICBR)
+    + Item category response profile (ICRP)
+
++ Bug fixes and improvements
++ Standardized terminology: unified the usage of "class" and "rank" throughout the package
++ Various minor bug fixes
+
 # Exametrika 1.2.0 on Jan 30, 2025.
 
 * Improved numerical stability for model estimation

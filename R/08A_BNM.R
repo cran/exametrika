@@ -91,11 +91,17 @@ fill_adj <- function(g, ItemLabel) {
 BNM <- function(U, Z = NULL, w = NULL, na = NULL,
                 g = NULL, adj_file = NULL, adj_matrix = NULL) {
   # data format
-  if (class(U)[1] != "exametrika") {
+  if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
+
+  if (U$response.type != "binary") {
+    response_type_error(U$response.type, "BNM")
+  }
+
+
   U <- tmp$U * tmp$Z
   testlength <- NCOL(tmp$U)
   nobs <- NROW(tmp$U)
