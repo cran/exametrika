@@ -1,5 +1,5 @@
 
-# exametrika <img src="man/figures/sticker.png" align="right" height="139" />
+# exametrika <img src="man/figures/exametrika.png" align="right" height="139" />
 
 
 ## Overview
@@ -77,7 +77,7 @@ The package implements three complementary approaches to modeling local dependen
 
 Exametrika was originally developed and published as a Mathematica and Excel Add-in. For additional information about Exametrika, visit:
 
-- [Test Data Engineering Website](http://shojima.starfree.jp/tde/)
+- [Test Data Engineering Website](http://sh0j1ma.stars.ne.jp/tde/index.htm)
 - [Package News](NEWS.md)
 
 
