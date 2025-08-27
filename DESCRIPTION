@@ -1,7 +1,7 @@
 Package: exametrika
 Type: Package
 Title: Test Theory Analysis and Biclustering
-Version: 1.6.0
+Version: 1.6.1
 Authors@R: person("Koji Kosugi",role=c("aut","cre"),
                   email="kosugitti@gmail.com",
                   comment = c(ORCID = "0000-0001-5816-0099"))
@@ -29,8 +29,8 @@ Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: R (>= 4.1.0), mvtnorm, igraph
 NeedsCompilation: no
-Packaged: 2025-08-19 00:28:26 UTC; pythagoras
+Packaged: 2025-08-27 01:06:54 UTC; pythagoras
 Author: Koji Kosugi [aut, cre] (ORCID: <https://orcid.org/0000-0001-5816-0099>)
 Maintainer: Koji Kosugi <kosugitti@gmail.com>
 Repository: CRAN
-Date/Publication: 2025-08-19 04:20:02 UTC
+Date/Publication: 2025-08-27 02:40:07 UTC
