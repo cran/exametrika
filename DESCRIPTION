@@ -1,10 +1,10 @@
 Package: exametrika
 Type: Package
 Title: Test Theory Analysis and Biclustering
-Version: 1.6.1
-Authors@R: person("Koji Kosugi",role=c("aut","cre"),
-                  email="kosugitti@gmail.com",
-                  comment = c(ORCID = "0000-0001-5816-0099"))
+Version: 1.6.3
+Authors@R: 
+    person("Koji Kosugi", , , "kosugitti@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-5816-0099"))
 Description: Implements comprehensive test data engineering methods as described in 
     Shojima (2022, ISBN:978-9811699856). Provides statistical techniques for 
     engineering and processing test data: Classical Test Theory (CTT) with 
@@ -27,10 +27,12 @@ URL: https://kosugitti.github.io/exametrika/
 RoxygenNote: 7.3.2
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
-Depends: R (>= 4.1.0), mvtnorm, igraph
-NeedsCompilation: no
-Packaged: 2025-08-27 01:06:54 UTC; pythagoras
+Depends: R (>= 4.1.0)
+Imports: mvtnorm, igraph, Rcpp (>= 1.0.7)
+LinkingTo: Rcpp
+NeedsCompilation: yes
+Packaged: 2025-09-28 22:04:35 UTC; newton
 Author: Koji Kosugi [aut, cre] (ORCID: <https://orcid.org/0000-0001-5816-0099>)
 Maintainer: Koji Kosugi <kosugitti@gmail.com>
 Repository: CRAN
-Date/Publication: 2025-08-27 02:40:07 UTC
+Date/Publication: 2025-09-30 22:50:02 UTC

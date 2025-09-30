@@ -1,6 +1,40 @@
+# exametrika 1.6.3
+
++ Major performance enhancement for GRM (Graded Response Model)
+  + Replaced R implementation with high-performance C++ code using Rcpp
+  + Implemented analytical gradient computation for significant speed improvements
+  + Achieved 5-6x faster convergence compared to numerical differentiation
+  + Maintains identical mathematical accuracy to previous implementation
+  + Full compatibility with existing GRM() function interface
++ Added `converge` variable to all EM-based functions to indicate algorithm convergence status
+  + Functions affected: Biclustering(), LCA(), LRA(), and related methods
+  + Returns TRUE if converged within maxiter iterations, FALSE otherwise
+  + Displays convergence warning messages when maxiter is reached
++ Enhanced GridSearch() function with convergence handling
+  + Automatically excludes non-converged results from optimization
+  + Displays warning messages for parameter combinations that failed to converge
+  + Returns list of failed settings in output
+  + Terminates with error message if all parameter combinations fail to converge
++ Improved numerical stability in Biclustering()
+  + Implemented conditional pmax() application to avoid unnecessary log-likelihood inflation
+  + Applied numerical correction only when NaN/Inf values are detected
++ High-performance polychoric correlation computation
+  + Implemented C++ acceleration for polychoric correlation calculations
+  + Achieved significant speed improvements over R-based implementation
++ Improved Array-type plot visualization with enhanced color palette
+  + Replaced dull default colors with vibrant, high-contrast color palette
+  + Added colorblind-friendly color scheme for better accessibility
+  + Binary data (2 categories) now uses black and white for optimal contrast
+  + Multi-category data uses enhanced colorblind-accessible palette
+
+
+# exametrika 1.6.2 
+
++ Biclustering: Fixed floating-point arithmetic errors causing NaN results
+
 # exametrika 1.6.1 on Aug 26, 2025
 
-+ Bug fix for biclustering
++ Biclustering: Fixed improper handling of missing values
 
 # exametrika 1.6.0 on Aug 12, 2025
 
