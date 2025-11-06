@@ -1,3 +1,44 @@
+# exametrika 1.6.5
+
++ Critical bugfix for LCA() response type validation
+  + Fixed incorrect variable reference in response type checking
++ Added beta1 and beta2 parameters to all Beta distribution-based functions
+  + LRA.binary(): beta1=1, beta2=1 (GTM method)
+  + LCA(): beta1=1, beta2=1
+  + Biclustering.binary(): beta1=1, beta2=1
+  + BNM(): beta1=1, beta2=1
+  + LDB(): beta1=1, beta2=1
+  + LDLRA(): beta1=2, beta2=2
+  + LD_param_est(): beta1=2, beta2=2 (internal helper function)
+  + LDLRA_PBIL(): beta1=2, beta2=2
+  + These parameters control the prior density parameters in Bayesian parameter estimation
+  + Users can now customize Beta distribution parameters for EM algorithm parameter updating
+  + Default values preserve backward compatibility with previous versions
++ Added alpha parameter to polytomous models for Dirichlet prior control
+  + Biclustering.ordinal(): alpha=1 (flat Dirichlet prior)
+  + Biclustering.nominal(): alpha=1 (flat Dirichlet prior)
+  + These parameters control the concentration parameter for Dirichlet priors in category probability estimation
+  + Users can customize Dirichlet parameters to adjust prior strength (alpha > 0)
+  + Default values (alpha=1) preserve backward compatibility with previous versions
++ Simplified function names for structure learning functions
+  + StrLearningGA_BNM() renamed to BNM_GA()
+  + StrLearningPBIL_BNM() renamed to BNM_PBIL()
+  + StrLearningPBIL_LDLRA() renamed to LDLRA_PBIL()
+  + Shorter, more intuitive function names for improved usability
+  + All documentation and examples updated accordingly
+
+# exametrika 1.6.4
+
++ Critical bugfix for Biclustering() field initialization
+  + Fixed subscript out of bounds error when nfld values cause ceiling() to exceed nfld
+  + Added pmin() constraint to ensure fld0 values never exceed nfld parameter
+  + Resolves crashes with specific nfld/testlength combinations (e.g., nfld=15, testlength=21)
++ Enhanced GridSearch() fit index optimization logic
+  + Added support for all fit indices returned by TestFitIndices()
+  + Correctly handles minimization indices: model_log_like, model_Chi_sq, RMSEA, AIC, CAIC, BIC
+  + Correctly handles maximization indices: NFI, RFI, IFI, TLI, CFI
+  + Added validation to prevent unknown index specification
+
 # exametrika 1.6.3
 
 + Major performance enhancement for GRM (Graded Response Model)
