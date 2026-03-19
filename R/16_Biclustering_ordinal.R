@@ -269,7 +269,7 @@ Biclustering.ordinal <- function(U,
   ptn <- apply(tmp$Q, 1, function(x) paste(x, collapse = ""))
   benchG <- as.numeric(as.factor(ptn))
 
-  fullG <- length(benchG)
+  fullG <- length(unique(benchG))
   benchmemb <- matrix(0, nrow = nobs, ncol = fullG)
   for (i in 1:nobs) {
     benchmemb[i, benchG[i]] <- 1
@@ -301,7 +301,18 @@ Biclustering.ordinal <- function(U,
   # Analysis model
   chi_A <- 2 * (ell_B - test_log_lik)
   df_A <- bench_nparam - nparam
-  FitIndices <- calcFitIndices(chi_A, chi_B, df_A, df_B, nobs)
+  FitIndices <- structure(
+    c(list(
+      model_log_like = test_log_lik,
+      bench_log_like = ell_B,
+      null_log_like = ell_N,
+      model_Chi_sq = chi_A,
+      null_Chi_sq = chi_B,
+      model_df = df_A,
+      null_df = df_B
+    ), calcFitIndices(chi_A, chi_B, df_A, df_B, nobs)),
+    class = c("exametrika", "ModelFit")
+  )
 
   # output ----------------------------------------------------------
   cls <- apply(clsmemb, 1, which.max)
@@ -310,8 +321,9 @@ Biclustering.ordinal <- function(U,
   flddist <- colSums(fldmemb01)
   clsmemb01 <- sign(clsmemb - apply(clsmemb, 1, max)) + 1
   clsdist <- colSums(clsmemb01)
-  StudentRank <- clsmemb
+  StudentRank <- cbind(clsmemb, Estimate = cls)
   rownames(StudentRank) <- tmp$ID
+  colnames(StudentRank) <- c(paste("Membership", 1:ncls), "Estimate")
   ## Expected score
   BFRP1 <- BFRP2 <- matrix(0, nrow = nfld, ncol = ncls)
   weights <- matrix(0, nrow = nfld, ncol = ncls)
@@ -332,10 +344,29 @@ Biclustering.ordinal <- function(U,
   TRP <- colSums(BFRP1)
   TRPlag <- TRP[2:ncls]
   TRPmic <- sum(TRPlag[1:(ncls - 1)] - TRP[1:(ncls - 1)] < 0, na.rm = TRUE)
-  WOACflg <- FALSE
+
+  model_esp <- matrix(0, nrow = nfld, ncol = ncls)
+  for (f in 1:nfld) {
+    for (cc in 1:ncls) {
+      model_esp[f, cc] <- sum((1:maxQ) * BCRM[f, cc, ])
+    }
+  }
+  norm_frp <- (model_esp - 1) / (maxQ - 1)
+  FRPIndex <- IRPindex(norm_frp)
+  FRPmic <- sum(abs(FRPIndex$C))
+
+  SOACflg <- WOACflg <- FALSE
   if (TRPmic == 0) {
     WOACflg <- TRUE
-    if (verbose) {
+    if (FRPmic == 0) {
+      SOACflg <- TRUE
+    }
+  }
+  if (verbose) {
+    if (SOACflg & WOACflg) {
+      message("Strongly ordinal alignment condition was satisfied.")
+    }
+    if (!SOACflg & WOACflg) {
       message("Weakly ordinal alignment condition was satisfied.")
     }
   }
@@ -351,6 +382,9 @@ Biclustering.ordinal <- function(U,
     mic = mic,
     converge = converge,
     nobs = nobs,
+    n_class = ncls,
+    n_field = nfld,
+    n_cycle = emt,
     Nclass = ncls,
     Nfield = nfld,
     N_Cycle = emt,
@@ -358,6 +392,7 @@ Biclustering.ordinal <- function(U,
     LRD = clsdist,
     LCD = clsdist,
     FRP = BCRM,
+    FRPIndex = FRPIndex,
     TRP = TRP,
     CMD = colSums(clsmemb),
     RMD = colSums(clsmemb),
@@ -369,6 +404,7 @@ Biclustering.ordinal <- function(U,
     BFRP = list(Weighted = BFRP1, Observed = BFRP2),
     TestFitIndices = FitIndices,
     log_lik = test_log_lik, # New naming convention
+    SOACflg = SOACflg,
     WOACflg = WOACflg,
     # Deprecated fields (for backward compatibility)
     LogLik = test_log_lik

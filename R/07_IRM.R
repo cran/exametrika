@@ -2,15 +2,57 @@
 #' @description
 #'  This function performs Biclustering structure learning using the Infinite Relational Model (IRM)
 #'  to automatically determine the optimal number of classes C and optimal number of
-#'  fields F. It can be found in a single run of the analysis, but
-#'  it takes a long computation time when the sample size S is large.
-#'  This method incorporates the Chinese restaurant process
-#'  and Gibbs sampling. In detail, See Section 7.8 in Shojima(2022).
+#'  fields F. It dispatches to the appropriate method based on the data type:
+#'  binary, ordinal, or nominal. For binary data, see Section 7.8 in Shojima(2022).
+#'  For nominal data, a Dirichlet-Multinomial collapsed Gibbs sampler is used.
 #' @param U U is either a data class of exametrika, or raw data. When raw data is given,
 #' it is converted to the exametrika class with the [dataFormat] function.
+#' @param ... Additional arguments passed to specific methods.
+#' @return An object of class "exametrika" containing the IRM results.
+#' See \code{Biclustering_IRM.binary} or \code{Biclustering_IRM.nominal} for details.
+#' @importFrom stats rmultinom
+#' @examples
+#' \donttest{
+#' # Fit a Biclustering model with automatic structure learning using IRM
+#' # gamma_c and gamma_f are concentration parameters for the Chinese Restaurant Process
+#' result <- Biclustering_IRM(J35S515, gamma_c = 1, gamma_f = 1, verbose = TRUE)
+#'
+#' # Display the Bicluster Reference Matrix (BRM) as a heatmap
+#' plot(result, type = "Array")
+#'
+#' # Plot Field Reference Profiles (FRP) in a 3-column grid
+#' plot(result, type = "FRP", nc = 3)
+#' }
+#'
+#' @export
+
+Biclustering_IRM <- function(U, ...) {
+  UseMethod("Biclustering_IRM")
+}
+
+#' @rdname Biclustering_IRM
+#' @param na na argument specifies the numbers or characters to be treated as missing values.
 #' @param Z Z is a missing indicator matrix of the type matrix or data.frame
 #' @param w w is item weight vector
-#' @param na na argument specifies the numbers or characters to be treated as missing values.
+#' @export
+Biclustering_IRM.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
+  if (inherits(U, "exametrika")) {
+    if (U$response.type == "binary") {
+      return(Biclustering_IRM.binary(U, ...))
+    } else if (U$response.type == "ordinal") {
+      return(Biclustering_IRM.ordinal(U, ...))
+    } else if (U$response.type == "rated") {
+      stop("Biclustering_IRM.rated is not supported for nominal-scale IRM")
+    } else if (U$response.type == "nominal") {
+      return(Biclustering_IRM.nominal(U, ...))
+    }
+  }
+
+  U <- dataFormat(U, na = na, Z = Z, w = w)
+  Biclustering_IRM(U, ...)
+}
+
+#' @rdname Biclustering_IRM
 #' @param gamma_c \eqn{\gamma_C} is the hyperparameter of the CRP and represents the
 #' attractiveness of a new Class. As \eqn{\gamma_C} increases, the student is more likely
 #' to be seated at a vacant class. The default is 1.
@@ -27,7 +69,11 @@
 #' @param EM_limit After IRM process, resizing the number of classes process will starts.
 #' This process using EM algorithm,\code{EM_limit} is the maximum number of iteration with
 #' default of 20.
-#' @param seed seed value for random numbers.
+#' @param seed Random seed for reproducibility. When a numeric value is provided,
+#' \code{set.seed(seed)} is called before the Gibbs sampling begins, ensuring
+#' reproducible results. The default is \code{123}, which guarantees deterministic
+#' output. Set to \code{NULL} to disable seed setting and let the results depend
+#' on the current state of the random number generator.
 #' @param verbose verbose output Flag. default is TRUE
 #' @return
 #' \describe{
@@ -55,32 +101,16 @@
 #'  \item{RMD}{Rank Membership Distribution.}
 #'  \item{TestFitIndices}{Overall fit index for the test.See also [TestFit]}
 #' }
-#' @importFrom stats rmultinom
 #' @examples
 #' \donttest{
-#' # Fit a Biclustering model with automatic structure learning using IRM
-#' # gamma_c and gamma_f are concentration parameters for the Chinese Restaurant Process
 #' result <- Biclustering_IRM(J35S515, gamma_c = 1, gamma_f = 1, verbose = TRUE)
-#'
-#' # Display the Bicluster Reference Matrix (BRM) as a heatmap
-#' # Shows the discovered clustering structure of items and students
 #' plot(result, type = "Array")
-#'
-#' # Plot Field Reference Profiles (FRP) in a 3-column grid
-#' # Shows the probability patterns for each automatically determined field
-#' plot(result, type = "FRP", nc = 3)
-#'
-#' # Plot Test Reference Profile (TRP)
-#' # Shows the overall response pattern across all fields
-#' plot(result, type = "TRP")
 #' }
-#'
 #' @export
-
-Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
-                             gamma_c = 1, gamma_f = 1,
-                             max_iter = 100, stable_limit = 5, minSize = 20, EM_limit = 20,
-                             seed = 123, verbose = TRUE) {
+Biclustering_IRM.binary <- function(U, Z = NULL, w = NULL, na = NULL,
+                                    gamma_c = 1, gamma_f = 1,
+                                    max_iter = 100, stable_limit = 5, minSize = 20, EM_limit = 20,
+                                    seed = 123, verbose = TRUE, ...) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
@@ -94,7 +124,9 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
   gamp <- 1
 
   # Initialize
-  set.seed(seed)
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
   limit_count <- 0
   iter <- 1
   pattern <- sort(unique(nrs(tmp)))
@@ -107,7 +139,7 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
   for (i in 1:nobs) {
     cls01[i, which((pattern == nrs(tmp)[i]))] <- 1
   }
-  colnames(cls01) <- paste("Class", 1:ncls)
+  colnames(cls01) <- paste("Rank", 1:ncls)
   rownames(cls01) <- tmp$ID
   cls <- cls01 %*% (1:ncls)
   Nc <- colSums(cls01)
@@ -153,7 +185,7 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
     sort_list2 <- order(rowSums(Pcf), decreasing = FALSE)
     Pcf <- Pcf[sort_list2, ]
     cls01 <- cls01[, sort_list2]
-    colnames(cls01) <- paste("Class", 1:ncls)
+    colnames(cls01) <- paste("Rank", 1:ncls)
     cls <- cls01 %*% (1:ncls)
     return(list(Pcf = Pcf, cls01 = cls01, fld01 = fld01, cls = cls, field = field))
   }
@@ -266,8 +298,8 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
 
         # Likelihood to Probability
         ptab <- c(exist_tab, new_tab)
-        mintab <- min(ptab)
-        exptab <- exp(ptab - mintab)
+        maxtab <- max(ptab)
+        exptab <- exp(ptab - maxtab)
         ptab <- exptab / sum(exptab)
         ptab <- round(ptab + const, digits = -log10(const))
 
@@ -368,10 +400,8 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
         vec3[j] <- den
       }
       log_tab <- log_tab_tmp + vec1 + vec2 - vec3
-      minLog <- min(log_tab)
-      log_exp_tab <- log_tab - minLog
-      maxLogExp <- max(log_exp_tab)
-      exptab <- exp(log_exp_tab - maxLogExp)
+      maxtab <- max(log_tab)
+      exptab <- exp(log_tab - maxtab)
       ptab <- exptab / sum(exptab)
       ptab <- round(ptab + const, digits = -log10(const))
 
@@ -538,7 +568,7 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
   for (i in 1:nobs) {
     cls01[i, cls[i]] <- 1
   }
-  colnames(cls01) <- paste("Class", 1:ncls)
+  colnames(cls01) <- paste("Rank", 1:ncls)
   rownames(cls01) <- tmp$ID
 
   fld01 <- matrix(0, nrow = testlength, ncol = nfld)
@@ -568,6 +598,9 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
 
   # Output ---------------------------------------------------------
   pifr <- t(Pcf)
+  rownames(pifr) <- paste0("Field", 1:nfld)
+  colnames(pifr) <- paste0("Rank", 1:ncls)
+  FRPIndex <- IRPindex(pifr)
   flddist <- colSums(fld01)
   clsdist <- colSums(cls01)
   TRP <- colSums(pifr * flddist)
@@ -575,21 +608,26 @@ Biclustering_IRM <- function(U, Z = NULL, w = NULL, na = NULL,
   ret <- structure(list(
     U = U,
     testlength = testlength,
-    msg = "Class",
+    msg = "Rank",
     nobs = nobs,
     n_class = ncls, # New naming convention
     n_field = nfld, # New naming convention
-    em_cycle = EMt, # New naming convention
+    n_cycle = EMt, # New naming convention
+    em_cycle = EMt, # IRM-specific naming
     LFD = flddist,
+    LRD = clsdist,
     LCD = clsdist,
     FRP = pifr,
+    FRPIndex = FRPIndex,
     TRP = TRP,
     FieldEstimated = field,
     ClassEstimated = cls,
     TestFitIndices = FitIndices,
+    log_lik = llm,
     # Deprecated fields (for backward compatibility)
     Nclass = ncls,
     Nfield = nfld,
+    N_Cycle = EMt,
     EM_Cycle = EMt
   ), class = c("exametrika", "IRM"))
   return(ret)

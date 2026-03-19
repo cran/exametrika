@@ -1,3 +1,231 @@
+# exametrika 1.10.1
+
+## Vignette Build Time Reduction
+
+- **Reduced vignette build time from ~46 minutes to ~5 minutes**: Added `eval=FALSE` to computationally intensive code chunks in vignettes (GridSearch, IRM, LDLRA, LDLRA_PBIL, LDB, BINET, ordinal/nominal Biclustering, ordinal/rated LRA). The Japanese guide (`guide-ja`) now uses `eval=FALSE` for all model estimation chunks to avoid duplicating computation from English vignettes. Full rendered output is available on the [pkgdown site](https://kosugitti.github.io/exametrika/).
+
+# exametrika 1.10.0
+
+## Bug Fixes
+
+### CAIC (Consistent AIC) Formula Correction
+
+- **Fixed CAIC formula to match Bozdogan (1987) original definition**: The CAIC penalty term was `log(n + 1)` but should be `log(n) + 1` per Bozdogan (1987, Psychometrika, 52(3), p.358, Proposition 2, Eq.44). The original Mathematica implementation had this error (`Log[nobs + 1]`), and the R port inherited it. Both the R version (`R/00_ModelFitModule.R`) and the Mathematica version (`develop/mtmk15forVer13/mod/Module_ModelFit.nb`) have been corrected. The numerical difference is approximately 1 (constant), but the corrected formula now matches the published definition: `CAIC(k) = -2 log L + k * (log(n) + 1)`. This affects all models that compute fit indices: IRT, LCA, LRA (binary/ordinal/rated), Biclustering (binary/ordinal/nominal), IRM, BNM, LDLRA, LDB, BINET, and GRM. All 873 tests pass with the corrected formula.
+
+### GRM Example Fix
+
+- **Changed GRM examples from `\donttest` to `\dontrun`**: GRM's multi-panel plot examples caused "invalid graphics state" errors in non-interactive environments (pkgdown, CI). Changed to `\dontrun` to prevent build failures.
+
+### dataFormat Robustness Improvements
+
+- **Fixed auto-detection ignoring `CA` parameter**: When `CA` (correct answer vector) was provided but `response.type` was not explicitly specified, `dataFormat()` incorrectly classified the data as `"ordinal"` instead of `"rated"`. This caused `$U` (binary scoring matrix) to be `NULL`. The auto-detection now checks for `CA` before ordinal/nominal detection: binary → rated (if CA provided) → ordinal → nominal.
+- **Fixed `id` parameter not working for column 1**: Changed `id` default from `1` to `NULL`. Previously, `id = 1` (both default and explicit) triggered auto-detection heuristics, making it impossible to explicitly specify the first column as the ID column. Now `id = NULL` triggers auto-detection, and any numeric value (including `1`) forces that column to be used as ID.
+- **Improved ID auto-detection for consecutive integers**: Simplified the first-column heuristic to treat unique consecutive integers (e.g., `1:N`) as ID regardless of whether they also look like valid response values. Previously, `1:10` was misclassified as response data because `looks_like_response_data()` returned TRUE.
+- **Fixed missing values in rated `U` matrix**: When the response matrix contained missing values (`-1`), the binary scoring matrix `U` incorrectly scored them as `0` (incorrect) instead of `-1` (missing). Now `U[i,j] = -1` when `Q[i,j] = -1`.
+- **Fixed `drop=FALSE` missing in item exclusion**: When items were excluded due to invalid variance (e.g., containing `Inf`), the column subsetting `response.matrix[, mask]` dropped matrix dimensions if only one item remained, causing a crash. Added `drop = FALSE`.
+- **Added diagnostic messages**: `dataFormat()` now reports via `message()` when it detects problematic data:
+  - Items with all missing values
+  - Items with zero variance (constant response values)
+  - Students with all missing responses
+
+### BINET `g_list` / `adj_list` Input Path Fix
+
+- **Fixed `g_csv` variable undefined error when using `g_list` or `adj_list` input**: `BINET()` crashed with an undefined variable error at the graph construction step when the DAG was specified via `g_list` or `adj_list` parameters. The internal variable `g_csv` (used to build the integrated graph object `all_g`) was only defined in the `adj_file` code path. Added logic to reconstruct `g_csv` from `adj_list` for the `g_list` and `adj_list` input paths, ensuring `all_g` is correctly built with Field edge attributes regardless of input method.
+- **Fixed `g_list` / `adj_list` length validation**: The length check for `g_list` and `adj_list` incorrectly compared against `ncls` (number of classes) instead of `nfld` (number of fields). In BINET, each element of `adj_list` represents the DAG structure at a specific field, so the list length should equal `nfld`. Also fixed `g_list` type check from `g_list[[1]]` (always checking the first element) to `g_list[[j]]` (checking each element).
+
+### Biclustering_IRM.binary S3 Method Consistency Fix
+
+- **Added `...` to `Biclustering_IRM.binary()` signature**: The S3 generic `Biclustering_IRM(U, ...)` requires all methods to include `...` in their formal arguments. The `.binary` method was missing it, causing an R CMD check WARNING. Added `...` to match the generic and the `.nominal`/`.ordinal` methods.
+
+### Biclustering_IRM `msg` Field Fix
+
+- **Fixed IRM `msg` field to correctly distinguish Rank vs Class models**: Binary IRM and Ordinal IRM are Ranklustering models (ordered latent classes), so `msg = "Rank"` is correct. Nominal IRM has no Ranklustering concept (unordered latent classes), so `msg = "Class"` is correct. Previously all three methods had inconsistent values; now `Biclustering_IRM.binary` and `Biclustering_IRM.ordinal` return `msg = "Rank"`, while `Biclustering_IRM.nominal` returns `msg = "Class"`. Also updated internal column names of `cls01` and `FRP` from `"Class"` to `"Rank"` for binary/ordinal IRM. The shared Gibbs core (`irm_gibbs_core()`) output column names were also updated.
+
+### Biclustering_IRM.binary Missing `LRD` Alias
+
+- **Added `LRD` (Latent Rank Distribution) alias to `Biclustering_IRM.binary()` return value**: The binary IRM was the only Biclustering model that did not include `LRD` in its return value (it only had `LCD`). Other Biclustering models (binary Biclustering, nominal IRM, ordinal IRM) all return both `LRD` and `LCD`. Added `LRD = clsdist` as an alias for `LCD` to ensure consistency across all Biclustering-family models. This improves interoperability with downstream packages (ggExametrika) that look up `LRD` when `msg == "Rank"`.
+
+### Biclustering_IRM Seed Default
+
+- **Reverted `Biclustering_IRM()` seed default back to 123**: Ensures reproducibility by default.
+
+### Biclustering_IRM `t(apply())` Dimension Drop Fix
+
+- **Fixed `t(apply(log_S, 1, irm_log_to_prob))` dimension drop in Nominal/Ordinal IRM**: When the Gibbs sampler converged to `ncls=1` or `nfld=1`, `apply()` on a single-column matrix returned a vector instead of a matrix, causing `t()` to produce a 1-row matrix instead of an N-row matrix. This led to incorrect class/field membership assignment. Replaced all 6 instances of `t(apply(mat, 1, fun))` with explicit for-loops in both `Biclustering_IRM.nominal()` (3 locations: EM E-step, final class membership, final field membership) and `Biclustering_IRM.ordinal()` (3 locations: same). Consistent with the project's `apply()` caution policy.
+
+### Biclustering_IRM Log-Probability Normalization Fix
+
+- **Fixed log-to-probability conversion in `Biclustering_IRM()` Gibbs sampler**: Changed `exp(ptab - min(ptab))` to `exp(ptab - max(ptab))` for numerical stability. The previous implementation subtracted the minimum log-probability, which could cause overflow (`exp(large positive) = Inf`) when the range of log-probabilities was large, resulting in `NaN` after normalization. Subtracting the maximum ensures the largest value becomes `exp(0) = 1` and all others underflow harmlessly to near-zero values.
+
+### Biclustering.nominal Model Fit Fix
+
+- **Fixed `Biclustering.nominal()` using stale log-likelihood in model fit indices**: When the EM algorithm exited due to log-likelihood decrease, `BCRM` was correctly reverted to the previous iteration's value, but `test_log_lik` was not. The model fit section recalculated the correct log-likelihood as `testell`, but `chi_A`, `model_log_like`, `log_lik`, and `LogLik` all referenced the stale `test_log_lik` instead of `testell`. Also removed a duplicated model fit code block (copy-paste error).
+
+### J20S400 Dataset Fix
+
+- **Fixed `J20S400` response type from `nominal` to `binary`**: The `J20S400.rda` dataset was incorrectly stored with `response.type = "nominal"` despite being a binary (0/1) dataset with -99 as missing values. Missing values were not properly handled (Z was all 1s, Q contained raw -99 values). Regenerated from the original CSV source (`develop/sampleData/J20S400.csv`) with `dataFormat(..., na = -99)`, now correctly typed as `binary` with 86 missing values properly masked in Z.
+
+## New Features
+
+### Polytomous IRM (Biclustering_IRM.nominal / Biclustering_IRM.ordinal)
+
+- **New `Biclustering_IRM.nominal()` for nominal/polytomous data**: Extends the Infinite Relational Model (IRM) from binary to nominal scale data using a Dirichlet-Multinomial collapsed Gibbs sampler. The Chinese Restaurant Process (CRP) automatically determines the optimal number of classes and fields. After the Gibbs sampling phase, small classes are consolidated and refined with an EM algorithm. The Dirichlet prior concentration parameter `alpha` controls smoothing of category probabilities.
+- **New `Biclustering_IRM.ordinal()` for ordinal/polytomous data**: Extends IRM to ordinal scale data. Shares the same Dirichlet-Multinomial collapsed Gibbs sampler as nominal IRM (Phase 1), then applies ordinal-specific EM refinement (Phase 2) with cumulative normalization to enforce monotonic category boundaries. The `mic` parameter (default `TRUE`) enforces monotone increasing class ordering by expected score sum. Reports BFRP (Bicluster Field Reference Profile), FRPIndex, TRP, and Strongly/Weakly Ordinal Alignment Conditions (SOACflg/WOACflg).
+- **`Biclustering_IRM()` is now an S3 generic**: Dispatches to `Biclustering_IRM.binary` (existing binary IRM), `Biclustering_IRM.nominal` (new), and `Biclustering_IRM.ordinal` (new). Raw data is automatically formatted and dispatched based on `response.type`.
+- **Shared Gibbs sampler core**: The collapsed Gibbs sampler has been extracted into a shared internal function `irm_gibbs_core()` (in `R/00_IRM_Gibbs_CORE.R`), used by both nominal and ordinal IRM. Helper functions (`irm_calc_Ufcq`, `irm_lmvbeta`, `irm_log_to_prob`, `irm_bic_calc`, etc.) are also shared.
+- **Performance optimization**: The Gibbs sampler uses differential updates for the sufficient statistics array `U_fcq`, computing only the contribution of the target student/item rather than recalculating the full array at each step.
+
+### Confirmatory LCA/LRA (Test Equating)
+
+- **`LCA()` and `LRA()` now support a `conf` parameter for confirmatory analysis**: The `conf` argument accepts an IRP matrix (ncls/nrank x testlength) where non-NA values are held fixed throughout EM estimation and NA values are freely estimated. This enables test equating scenarios where anchor items retain their known IRPs while new items are calibrated against them.
+- **Label-based item matching**: When `conf` has column names, items are matched by label rather than by position. This allows `conf` to contain a subset of items (anchor items only) or items in a different order than the data. Items in the data but not in `conf` are automatically set to freely estimated. Unknown labels in `conf` produce an informative error.
+- **Works with both GTM and SOM methods** for LRA.
+
+### Internal Refactoring: SOM Estimation
+
+- **Extracted SOM estimation into `somclus()` internal function**: The Self-Organizing Maps estimation code previously inlined in `LRA.binary()` (~100 lines) has been extracted into a standalone internal function `somclus()` in `00_EMclus.R`. This parallels `emclus()` (GTM/EM) and returns the same structure. Also fixed a pre-existing typo (`h_cout` → `h_count`) and another (`oldsBIC` → `oldBIC`).
+
+## Test Suite Modernization
+
+- **Complete migration from Excel to CSV fixtures**: Removed all 14 legacy test files that depended on `tidyverse` and `readxl` for reading Excel-based Mathematica reference data. Replaced with 24 modern test files using base R `read.csv()` and `test_path()` to load CSV fixtures from `tests/testthat/fixtures/mathematica_reference/`. The new test suite has zero external package dependencies beyond `testthat`.
+- **Removed `readxl`/`tidyverse` from test dependencies**: DESCRIPTION `Suggests` no longer requires any packages beyond `knitr`, `rmarkdown`, and `testthat`.
+- **Fixture file reorganization**: Shortened overly long CSV fixture filenames to comply with CRAN's 100-byte portable path requirement.
+- **Test coverage**: 26 test files, 321 test blocks, covering all models (CTT, IRT 2PL/3PL/4PL, LCA, LRA binary/ordinal/nominal, Biclustering binary/ordinal/nominal, IRM binary/nominal/ordinal, BNM, LDLRA, LDB, BINET, GRM, GridSearch, dataFormat, polychoric correlation, scoring, student/test analysis, confirmatory LCA/LRA). 85 Mathematica reference CSV files for cross-validation.
+- **Added Nominal IRM tests** (`test-irm-nominal.R`): 18 test blocks for `Biclustering_IRM.nominal()` using J20S600 data — basic execution, dimensions, FRP validity, membership, fit indices, backward compatibility, seed reproducibility, alpha validation.
+- **Added Ordinal IRM tests** (`test-irm-ordinal.R`): 25 test blocks for `Biclustering_IRM.ordinal()` using J35S500 data — basic execution, dimensions, FRP validity, expected scores, TRP, BFRP, FRPIndex, SOAC/WOAC flags, mic parameter, fit indices, backward compatibility, seed reproducibility, alpha validation.
+
+## Documentation
+
+- **TestStatistics example**: Added stem-and-leaf plot example using `stem(nrs(dataFormat(J15S500)))` to demonstrate score distribution visualization.
+
+## Internal Improvements
+
+- **pkgdown migration**: Migrated documentation site from Jekyll (main/docs) to pkgdown (gh-pages branch via GitHub Actions).
+- **CI/CD**: Added GitHub Actions workflows for automated R CMD check, test coverage reporting, and pkgdown site deployment. Removed Codecov upload step from test-coverage workflow.
+- **.Rbuildignore cleanup**: Removed `^tests$` and `^inst$` entries that were incorrectly excluding tests and vignettes from the built package.
+
+---
+
+# exametrika 1.9.0
+
+## Bug Fixes
+
+### GridSearch `index` Parameter Fixes
+
+- **Index alias support**: `GridSearch()` now accepts common aliases for fit indices. `"loglik"`, `"log_lik"`, `"LogLik"`, and `"LL"` are mapped to `"model_log_like"`. `"Chi_sq"` and `"chi_sq"` are mapped to `"model_Chi_sq"`. Previously, using these aliases caused silent `NULL` extraction and eventual errors.
+- **Early validation**: Invalid index names are now caught immediately at the start of `GridSearch()`, before the computationally expensive grid search loop runs. The error message lists all valid options including available aliases.
+- **Log-likelihood optimization direction**: `model_log_like` is now correctly treated as a maximization target (larger log-likelihood = better fit). Previously, it was incorrectly placed in the minimization group, which would have selected the worst-fitting model.
+
+### Test Tolerance Fix
+
+- **Q3 matrix test**: Changed the 2PL Q3 matrix test from relative tolerance (`tolerance = 1e-2` in `expect_equal`) to absolute difference comparison (threshold 0.005). Q3 residual correlations include values near zero where relative tolerance comparisons are unreliable.
+
+### NAMESPACE Fix
+
+- **Missing imports**: Added `layout` and `plot.new` from `graphics` to NAMESPACE. These functions are used by the legend strip layout helpers for polytomous Biclustering plots.
+
+### LRA.ordinal / LRA.rated Category Computation Fix
+
+- **Fixed `apply(U$Q, 2, unique)` returning matrix instead of list**: When all items have the same number of response categories (e.g., all 5-point Likert), `apply()` returns a matrix rather than a list. The subsequent `lapply()` then iterates over individual elements instead of per-column vectors, causing `ncat` to be a vector of 1s and crashing the algorithm. Replaced with `lapply(seq_len(nitems), function(j) sort(unique(U$Q[, j])))` which always returns a proper list. Same fix applied to `catfreq999` computation. Both `LRA.ordinal` and `LRA.rated` were affected.
+
+### GRM ItemFitIndices Computation Fix
+
+- **Fixed `apply(tmp$Q, 2, table)` returning matrix instead of list**: Same class of bug as the LRA.ordinal/LRA.rated fix above. In `GRM()`, the null model log-likelihood computation used `apply(tmp$Q, 2, table)` to compute per-item category frequencies. When all items have the same number of response categories (e.g., all 5-point Likert), `apply()` returns a matrix instead of a list, causing `response_list[[j]]` to extract a single number rather than the full frequency table. This produced incorrect `null_log_like` values and consequently wrong chi-square statistics, RMSEA, TLI, and CFI in `ItemFitIndices`. Replaced with `lapply(seq_len(nitems), function(j) table(tmp$Q[, j]))` which always returns a proper list.
+
+### LRA.ordinal Mixed Category Count Validation
+
+- **Added input validation for mixed category counts**: `LRA.ordinal()` now raises an informative error when items have different numbers of response categories (e.g., some items with 3 categories and others with 5). The internal matrix algebra uses fixed-stride indexing that assumes uniform category counts. The error message suggests alternatives (`LRA.rated`, `Biclustering.ordinal`) that support mixed category counts via list-based designs.
+
+### LCA/LRA FRP Plot Type Removal
+
+- **Removed "FRP" from valid plot types for LCA and LRA**: Field Reference Profile (FRP) requires a field structure (item grouping), which LCA and LRA do not have. Previously, `plot(lca_result, type = "FRP")` passed validation but failed at runtime because the `$FRP` field does not exist in LCA/LRA return values. Now properly rejected with an informative error message at the validation stage.
+
+## New Features
+
+### New Sample Datasets for Polytomous Biclustering
+
+- **J35S500**: Simulated ordinal dataset (500 students, 35 items, 5 categories) with a cumulative staircase pattern (5 latent classes, 5 fields). Contains approximately 0.5% missing values.
+- **J20S600**: Simulated nominal dataset (600 students, 20 items, 4 categories) with a cyclic category preference pattern (5 latent classes, 4 fields). Contains approximately 0.5% missing values.
+
+### New Plot Types for Polytomous Biclustering
+
+- **FRP** (Field Reference Profile): Expected score line plot per field, with `stat` parameter supporting `"mean"` (default), `"median"`, and `"mode"`.
+- **FCRP** (Field Category Response Profile): Category probability plot per field, with `style` parameter supporting `"line"` (default) and `"bar"` (stacked bar chart).
+- **FCBR** (Field Cumulative Boundary Reference): Boundary probability plot per field (ordinal Biclustering only).
+- **ScoreField**: Heatmap of expected scores across fields and latent classes/ranks.
+- **RRV** (Rank Reference Vector): Transposed view with fields on x-axis and expected scores on y-axis, with `stat` parameter.
+
+### FRPIndex for Ordinal Biclustering
+
+- Ordinal Biclustering now computes `FRPIndex` (Field Reference Profile indices) including location parameters (Alpha, Beta), slope parameters (A, B), and monotonicity indices (Gamma, C).
+
+### New Parameters for `plot.exametrika()`
+
+- `stat`: Controls the summary statistic for FRP and RRV plots (`"mean"`, `"median"`, `"mode"`).
+- `style`: Controls the display style for FCRP plots (`"line"`, `"bar"`).
+
+### Array Plot Improvements
+
+- **Missing value display**: Array plots now display missing values in a distinct color. Binary data uses gray (`#808080`) to distinguish from white (incorrect) and black (correct). Polytomous data uses black (`#000000`) to distinguish from the category color palette.
+
+### Print Method Improvements
+
+- **Ordinal Biclustering**: `print()` now displays FRPIndex (Field Reference Profile Indices) with a note that the values are based on normalized expected scores `(E[score]-1)/(maxQ-1)`.
+
+### Documentation Improvements
+
+- **FRPIndex**: Expanded documentation for the 6 profile shape indices (Alpha, A, Beta, B, Gamma, C) in `?Biclustering`, including detailed definitions and polytomous adaptation logic.
+
+### Return Value Structure Unification
+
+Systematic unification of return value structures across all analysis functions for consistency and interoperability.
+
+#### snake_case Field Names Extended to All Functions
+
+- **LDLRA**: Added `n_class` (retaining `Nclass` for backward compatibility)
+- **LDB**: Added `n_rank`, `n_field` (retaining `Nrank`, `Nfield`)
+- **BINET**: Added `n_class`, `n_field` (retaining `Nclass`, `Nfield`)
+- **Biclustering.nominal**: Added `n_class`, `n_field`, `n_cycle` (retaining `Nclass`, `Nfield`, `N_Cycle`)
+- **Biclustering.ordinal**: Added `n_class`, `n_field`, `n_cycle` (retaining `Nclass`, `Nfield`, `N_Cycle`)
+- **Biclustering_IRM**: Added `n_cycle`, `N_Cycle` (retaining `em_cycle`, `EM_Cycle` as IRM-specific aliases)
+
+#### Top-Level `log_lik` Added to All Functions
+
+- All analysis functions now consistently provide `log_lik` at the top level of the return object, matching `TestFitIndices$model_log_like`.
+- Functions updated: IRT, LCA, LRA.binary, BNM, LDLRA, LDB, BINET, Biclustering.binary, Biclustering_IRM
+
+#### TestFitIndices Structure Unified
+
+- **GRM, Biclustering.nominal, Biclustering.ordinal**: TestFitIndices now uses the full 16-field structure with `ModelFit` class, matching the format used by IRT/LCA/LRA and other functions. Previously these used bare `calcFitIndices()` output (9 fields, no class). Added fields: `model_log_like`, `bench_log_like`, `null_log_like`, `model_Chi_sq`, `null_Chi_sq`, `model_df`, `null_df`.
+- **GRM ItemFitIndices**: Also unified to the full 16-field structure with `ModelFit` class.
+- **BINET**: `TestFitIndices` added as primary name for multigroup fit indices (previously only `MG_FitIndices`). `MG_FitIndices` retained as backward-compatible alias. `SM_FitIndices` (saturated model) remains unchanged.
+
+#### Students Matrix Enhanced
+
+- **Biclustering.nominal**: Added `Estimate` column (most probable class assignment) to the Students matrix.
+- **Biclustering.ordinal**: Added `Estimate` column (most probable class assignment) to the Students matrix.
+
+#### Other Structural Improvements
+
+- **Biclustering_IRM**: Added `FRPIndex` (Field Reference Profile indices) for consistency with Biclustering.binary and LDB.
+- **LDB**: Fixed `TRP` from `matrix(1×ncls)` to `numeric vector`, consistent with all other functions.
+- **GridSearch**: Added `class = c("exametrika", "GridSearch")` to return value for method dispatch support.
+
+### Bug Fixes
+
+- **LCA `msg` field assignment**: Fixed `msg <- "Class"` to `msg = "Class"` inside `structure()` call (line 150 of `05_LCA.R`). The `<-` operator was being interpreted as a standalone assignment rather than a named list element, causing the `msg` field name to be empty.
+- **RMP/CMP single student plot error**: Fixed dimension drop error when plotting RMP or CMP for a single student (e.g., `plot(r, type="RMP", students=1)`). Added `drop = FALSE` to prevent matrix-to-vector coercion when extracting a single row from the Students matrix.
+- **LRA.ordinal / LRA.rated `TestFitIndices` log-likelihood fields**: Fixed `null_log_like` which incorrectly stored the saturated model log-likelihood (`log_lik_satu`) instead of the null model log-likelihood (`sum(null_itemll)`). Added missing `bench_log_like` field containing the saturated model log-likelihood (`sum(satu_itemll2)`). Note: the chi-square-based fit indices (NFI, CFI, TLI, RMSEA, AIC, BIC, etc.) were always computed correctly; only the stored log-likelihood labels were affected.
+- **LRA.ordinal / LRA.rated FitIndices structure**: Unified `TestFitIndices` and `ItemFitIndices` to the standard 16-field structure with `ModelFit` class (`c("exametrika", "ModelFit")`), matching all other analysis functions. Added `model_log_like`, `bench_log_like`, `null_log_like` to `ItemFitIndices`. Removed `ScoreRankCorr` / `RankQuantCorr` from `TestFitIndices` (already available at the top level of the return object).
+- **LRA.ordinal / LRA.rated test updates**: Updated `test-12OLR.R` and `test-13NLR.R` to handle the new `ModelFit` class (add `unclass()` before `as.data.frame()`) and adjusted column/index references to match the unified 16-field structure.
+
+### Plot Layout Improvements
+
+- **Legend strip layout**: Moved per-panel legends to a shared legend strip below the plot area for FCRP (line/bar), FCBR, GRM IRF, and IRT overlay (IRF/IIF) plots. Uses `layout()` with a thin dedicated row (height ratio 0.2) to reduce visual clutter in data panels. Added `setup_legend_layout()` and `draw_legend_strip()` internal helper functions.
+- **FCBR reference line**: Added `P(Q>=1)=1.0` reference line at the top of FCBR plots for visual completeness.
+
+---
+
 # exametrika 1.8.1
 
 ## Bug Fixes

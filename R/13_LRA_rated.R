@@ -82,7 +82,11 @@ LRA.rated <- function(U,
 
 
   # Calc Frequency
-  category999 <- lapply(apply(U$Q, 2, unique), sort)
+  # NOTE: Use lapply(seq_len, ...) instead of lapply(apply(..., 2, unique), ...)
+  # because apply() returns a matrix (not a list) when all columns have the
+  # same number of unique values, causing lapply to iterate over individual
+  # elements rather than per-column vectors.
+  category999 <- lapply(seq_len(nitems), function(j) sort(unique(U$Q[, j])))
   # Calc Frequency excluding missing
   category <- lapply(
     category999,
@@ -94,7 +98,7 @@ LRA.rated <- function(U,
   ncat <- sapply(category, length)
 
   # Frequency table of categories
-  catfreq999 <- apply(U$Q, 2, table)
+  catfreq999 <- lapply(seq_len(nitems), function(j) table(U$Q[, j]))
   catfreq <- lapply(catfreq999, function(x) x[names(x) != "-1"])
 
   ## Count Correct Ans
@@ -560,14 +564,17 @@ LRA.rated <- function(U,
   # Item Fit Indices
   # ItemFitIndices1 <- calcFitIndices(model_itemchisq1, null_itemchisq1, itemdf, null_itemdf, colSums(dat$Z))
   ItemFits <- calcFitIndices(model_itemchisq2, null_itemchisq2, itemdf, null_itemdf, colSums(U$Z))
-  ItemFitIndices <- c(
-    list(
+  ItemFitIndices <- structure(
+    c(list(
+      model_log_like = model_itemll2,
+      bench_log_like = satu_itemll2,
+      null_log_like = null_itemll,
       model_Chi_sq = model_itemchisq2,
       null_Chi_sq = null_itemchisq2,
       model_df = itemdf,
       null_df = null_itemdf
-    ),
-    ItemFits
+    ), ItemFits),
+    class = c("exametrika", "ModelFit")
   )
 
   TestFits <- calcFitIndices(
@@ -578,18 +585,17 @@ LRA.rated <- function(U,
     sum(colSums(U$Z))
   )
 
-  TestFitIndices <- c(
-    list(
-      ScoreRankCorr = rho1,
-      RankQuantCorr = rho2,
+  TestFitIndices <- structure(
+    c(list(
       model_log_like = log_lik,
-      null_log_like = log_lik_satu,
+      bench_log_like = sum(satu_itemll2),
+      null_log_like = sum(null_itemll),
       model_Chi_sq = sum(model_itemchisq2),
       null_Chi_sq = sum(null_itemchisq2),
       model_df = sum(itemdf),
       null_df = sum(null_itemdf)
-    ),
-    TestFits
+    ), TestFits),
+    class = c("exametrika", "ModelFit")
   )
 
   # output ----------------------------------------------------------

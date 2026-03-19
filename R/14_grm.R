@@ -180,7 +180,7 @@ params_to_target <- function(a_vec, b_list) {
 #' @importFrom Rcpp evalCpp
 #'
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' # Apply GRM to example data
 #' result <- GRM(J5S1000)
 #' print(result)
@@ -303,7 +303,7 @@ GRM <- function(U, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
     }
   }
   ### Null model
-  response_list <- apply(tmp$Q, 2, table)
+  response_list <- lapply(seq_len(nitems), function(j) table(tmp$Q[, j]))
   valid_response <- apply(tmp$Z, 2, sum)
   ell_N <- rep(0, nitems)
   for (j in 1:nitems) {
@@ -339,8 +339,30 @@ GRM <- function(U, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
   chi_B <- 2 * (ell_B - ell_N)
   df_B <- n_pattern * (ncat - 1)
   df_A <- df_B + 1
-  ItemFitIndices <- calcFitIndices(chi_A, chi_B, df_A, df_B, nobs)
-  TestFitIndices <- calcFitIndices(sum(chi_A), sum(chi_B), sum(df_A), sum(df_B), nobs)
+  ItemFitIndices <- structure(
+    c(list(
+      model_log_like = ell_A,
+      bench_log_like = ell_B,
+      null_log_like = ell_N,
+      model_Chi_sq = chi_A,
+      null_Chi_sq = chi_B,
+      model_df = df_A,
+      null_df = df_B
+    ), calcFitIndices(chi_A, chi_B, df_A, df_B, nobs)),
+    class = c("exametrika", "ModelFit")
+  )
+  TestFitIndices <- structure(
+    c(list(
+      model_log_like = sum(ell_A),
+      bench_log_like = sum(ell_B),
+      null_log_like = sum(ell_N),
+      model_Chi_sq = sum(chi_A),
+      null_Chi_sq = sum(chi_B),
+      model_df = sum(df_A),
+      null_df = sum(df_B)
+    ), calcFitIndices(sum(chi_A), sum(chi_B), sum(df_A), sum(df_B), nobs)),
+    class = c("exametrika", "ModelFit")
+  )
 
   ret <- structure(list(
     testlength = nitems,

@@ -1,5 +1,5 @@
 
-# exametrika <img src="man/figures/exametrika.png" align="right" height="139" />
+# exametrika <img src="man/figures/logo.png" align="right" height="139" alt="exametrika logo" />
 
 
 ## Overview
@@ -182,6 +182,10 @@ Available datasets:
   - Used in Biclustering and network model examples
 - J15S3810: Ordinal scale dataset (15 items with 4-point scale, 3810 examinees)
   - Used in ordinal latent rank model examples
+- J35S500: Ordinal polytomous dataset (35 items with 5 categories, 500 examinees)
+  - Used in ordinal Biclustering examples
+- J20S600: Nominal polytomous dataset (20 items with 4 categories, 600 examinees)
+  - Used in nominal Biclustering examples
 - J35S5000: Multiple-choice dataset (35 items, 5000 examinees)
   - Includes both response categories and correct answer data
   - Used in nominal scale latent rank model examples
@@ -372,9 +376,9 @@ plot(result.Ranklustering, type = "LRD")
 ```
 
 
-#### Finding optimal number of classes and fields
+### Finding Optimal Number of Classes and Fields
 
-##### Grid Search function
+#### Grid Search function
 
 The Grid Search function performs systematic exploration of optimal numbers of classes and fields based on statistical fit indices. This approach evaluates multiple parameter combinations and selects the best-fitting model according to specified criteria such as AIC, BIC, or other goodness-of-fit measures.
 
@@ -385,7 +389,7 @@ result$optimal_nfld
 result$optimal_result
 ```
 
-##### Infinite Relational Model
+#### Infinite Relational Model
 
 The Infinite Relational Model uses the Chinese Restaurant Process to explore the optimal number of fields and classes automatically. This model is particularly useful when you don't know the appropriate number of latent structures beforehand.
 
@@ -403,16 +407,65 @@ plot(result.IRM, type = "TRP")
 
 Additionally, supplementary notes on the derivation of the Infinite Relational Model with Chinese restaurant process is [here](https://kosugitti.github.io/kosugitti10/notes/IRM_memo.pdf).
 
-#### Biclustering for Polytomous data
+### Biclustering for Polytomous Data
 
-Biclustering and Rankclustering can also be performed on data with ordinal or nominal polytomous responses. The plot output is limited to the "Array" type only. Color palettes can be customized using the `colors` option to specify different color schemes.
+Biclustering and Rankclustering can also be performed on data with ordinal or nominal polytomous responses. Missing values are displayed in black in the Array plot. Color palettes can be customized using the `colors` option to specify different color schemes.
 
-```{r bic_poly}
-result.B.poly <- Biclustering(J15S3810, ncls = 3, nfld = 4)
-result.B.poly
-# Custom color palette example
-plot(result.B.poly, type = "Array", 
-colors = c("#FF1493", "#00FF00", "#FF4500", "#9932CC", "#FFD700"))
+#### Ordinal data
+
+```{r bic_poly_ord}
+result.B.ord <- Biclustering(J35S500, ncls = 5, nfld = 5, method = "R")
+result.B.ord
+plot(result.B.ord, type = "Array")
+```
+
+For ordinal polytomous Biclustering, several new plot types are available. The FRP (Field Reference Profile) shows the expected score per field across latent ranks. The `stat` parameter controls the summary statistic: "mean" (default), "median", or "mode".
+
+```{r bic_poly_ord_frp, fig.width=7, fig.height=5}
+plot(result.B.ord, type = "FRP", nc = 3, nr = 2)
+```
+
+The FCRP (Field Category Response Profile) shows the probability of each response category across latent ranks. The `style` parameter can be "line" (default) or "bar".
+
+```{r bic_poly_ord_fcrp, fig.width=7, fig.height=5}
+plot(result.B.ord, type = "FCRP", nc = 3, nr = 2)
+plot(result.B.ord, type = "FCRP", style = "bar", nc = 3, nr = 2)
+```
+
+The FCBR (Field Cumulative Boundary Reference) shows the cumulative boundary probabilities P(Q >= q) for each field. This plot type is only available for ordinal data.
+
+```{r bic_poly_ord_fcbr, fig.width=7, fig.height=5}
+plot(result.B.ord, type = "FCBR", nc = 3, nr = 2)
+```
+
+The ScoreField plot displays a heatmap of expected scores across fields and latent ranks.
+
+```{r bic_poly_ord_scorefield, fig.width=7, fig.height=5}
+plot(result.B.ord, type = "ScoreField")
+```
+
+The RRV (Rank Reference Vector) is a transposed view of the FRP, with fields on the x-axis and latent rank lines overlaid for comparison.
+
+```{r bic_poly_ord_rrv, fig.width=7, fig.height=5}
+plot(result.B.ord, type = "RRV")
+```
+
+#### Nominal data
+
+```{r bic_poly_nom}
+result.B.nom <- Biclustering(J20S600, ncls = 5, nfld = 4)
+result.B.nom
+plot(result.B.nom, type = "Array")
+```
+
+Nominal polytomous Biclustering also supports FRP, FCRP, ScoreField, and RRV plots. Note that FCBR is not available for nominal data because boundary probabilities only make sense for ordinal categories.
+
+```{r bic_poly_nom_plots, fig.width=7, fig.height=5}
+plot(result.B.nom, type = "FRP", nc = 2, nr = 2)
+plot(result.B.nom, type = "FCRP", nc = 2, nr = 2)
+plot(result.B.nom, type = "FCRP", style = "bar", nc = 2, nr = 2)
+plot(result.B.nom, type = "ScoreField")
+plot(result.B.nom, type = "RRV")
 ```
 
 ### Bayesian Network Model
@@ -776,7 +829,9 @@ plot(result.BINET, type = "LDPSR", nc = 3, nr = 2)
 | LRA | ✓ | ✓ | ✓ | | |
 | LRAordinal | | | | ✓ | |
 | LRArated | | | | ✓ | |
-| Biclustering |  | ✓ | ✓ | |✓ | |
+| Biclustering |  | ✓ | ✓ | | ✓ |
+| Biclustering (ordinal) | | ✓ | | | ✓ |
+| Biclustering (nominal) | | ✓ | | | ✓ |
 | IRM | | ✓ | ✓ | | |
 | LDLRA | ✓ | | | | |
 | LDB | | ✓ | ✓ | | |
@@ -789,9 +844,11 @@ plot(result.BINET, type = "LDPSR", nc = 3, nr = 2)
 | IRT | | | | IIC, ICC, TIC |
 | LCA | ✓ | ✓ | | |
 | LRA | ✓ | ✓ | | |
-| LRAordinal |  | ✓ | | | ICBR,ScoreFreq, ScoreRank |
-| LRArated |  | ✓ | | | ScoreFreq, ScoreRank |
+| LRAordinal |  | ✓ | | ICBR, ScoreFreq, ScoreRank |
+| LRArated |  | ✓ | | ScoreFreq, ScoreRank |
 | Biclustering | ✓ | ✓ | ✓ | |
+| Biclustering (ordinal) | ✓ | ✓ | ✓ | FCRP, FCBR, ScoreField |
+| Biclustering (nominal) | ✓ | ✓ | ✓ | FCRP, ScoreField |
 | IRM | | | ✓ | |
 | LDLRA | ✓ | ✓ | | |
 | LDB | ✓ | ✓ | ✓ | FieldPIRP |
