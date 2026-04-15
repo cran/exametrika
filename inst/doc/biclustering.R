@@ -66,3 +66,33 @@ plot(result.Ranklustering, type = "LRD")
 # plot(result.B.nom, type = "ScoreField")
 # plot(result.B.nom, type = "RRV")
 
+## ----bic-rated, eval=FALSE----------------------------------------------------
+# result.B.rated <- Biclustering(J21S300, ncls = 5, nfld = 3, method = "R", maxiter = 300)
+# result.B.rated
+# plot(result.B.rated, type = "Array")
+# plot(result.B.rated, type = "FRP", nc = 3, nr = 1)
+
+## ----irm-rated, eval=FALSE----------------------------------------------------
+# result.IRM.rated <- Biclustering_IRM(J21S300, gamma_c = 1, gamma_f = 1, verbose = TRUE)
+# plot(result.IRM.rated, type = "Array")
+# plot(result.IRM.rated, type = "FRP", nc = 3, nr = 1)
+
+## ----distractor, eval=FALSE---------------------------------------------------
+# result.B.rated <- Biclustering(J21S300, ncls = 5, nfld = 3, method = "R", maxiter = 300)
+# da <- DistractorAnalysis(result.B.rated)
+# 
+# # Full output (grouped by field for Biclustering)
+# print(da)
+# 
+# # Filter by items and/or ranks
+# print(da, items = 1:7, ranks = c(1, 5))
+# 
+# # Plot distractor bar charts
+# plot(da, items = 1:6, nc = 3, nr = 2)
+
+## ----distractor-lra, eval=FALSE-----------------------------------------------
+# result.LRA.rated <- LRA(J21S300, nrank = 5, mic = TRUE)
+# da_lra <- DistractorAnalysis(result.LRA.rated)
+# print(da_lra, items = 1:3)
+# plot(da_lra, items = 1:6, nc = 3, nr = 2)
+

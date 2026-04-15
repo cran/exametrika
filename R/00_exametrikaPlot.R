@@ -165,7 +165,11 @@ plot.exametrika <- function(x,
     if (!is.null(filename)) dev.off()
   })
 
-  par(mfrow = c(nr, nc))
+  # Skip mfrow for plot types that use layout() internally (FCRP, FCBR)
+  uses_layout <- type %in% c("FCRP", "FCBR")
+  if (!uses_layout) {
+    par(mfrow = c(nr, nc))
+  }
   testlength <- x$testlength
   nobs <- x$nobs
 
@@ -178,6 +182,7 @@ plot.exametrika <- function(x,
     LRArated = c("ScoreFreq", "ScoreRank", "ICRP", "RMP"),
     Biclustering = c("FRP", "TRP", "LCD", "LRD", "CMP", "RMP", "CRV", "RRV", "Array"),
     nominalBiclustering = c("FRP", "FCRP", "LCD", "LRD", "CMP", "Array", "ScoreField", "RRV"),
+    ratedBiclustering = c("FRP", "FCRP", "LCD", "LRD", "CMP", "RMP", "Array", "ScoreField", "RRV"),
     ordinalBiclustering = c("FRP", "FCRP", "FCBR", "LCD", "LRD", "CMP", "RMP", "Array", "ScoreField", "RRV"),
     IRM = c("FRP", "TRP", "Array"),
     LDLRA = c("IRP", "TRP", "LRD", "RMP"),
@@ -234,6 +239,7 @@ plot.exametrika <- function(x,
       }
     },
     ordinalBiclustering = ,
+    ratedBiclustering = ,
     nominalBiclustering = {
       if (type == "Array") {
         plot_array(x, cell_width, cell_height, colors)

@@ -1,3 +1,50 @@
+# exametrika 1.11.0
+
+## New Features
+
+- **`Biclustering_IRM.rated()`: Rated IRM (Infinite Relational Model for multiple-choice data)**: Performs IRM-based biclustering for rated data (items with correct answers and multiple response categories). Internally calls `Biclustering_IRM.nominal()` for estimation via Dirichlet-Multinomial collapsed Gibbs sampler, then post-processes the results: classes are sorted by correct response rate (ranklustering), and two layers of fit indices are reported — binary (item correct/incorrect, with full benchmark model including CFI/RMSEA) and nominal (category-level, AIC/BIC/CAIC only). Returns `TestFitIndices` (binary, default) and `TestFitIndices_nominal` (nominal) in the output.
+
+- **`DistractorAnalysis()`: Distractor analysis for rated models**: S3 generic function for analyzing response category distributions by rank/class. Computes observed frequency tables, proportion tables, chi-square tests against chance level, and Cramer's V effect sizes for each item-by-rank cell. Works with `LRA.rated` and `Biclustering.rated` / `Biclustering_IRM.rated` results. For Biclustering models, output is grouped by field. Supports `items` and `ranks` filtering in both `print()` and `plot()` methods.
+
+## New Data
+
+- **`J21S300`**: New rated sample dataset (21 items, 300 students, 4 response categories) for testing rated Biclustering and IRM models. Smaller and faster than J35S5000 (35 items, 5000 students).
+
+## Bug Fixes
+
+- **Fixed `maxiter` parameter ignored in `Biclustering.nominal()`**: The `maxiter` parameter was accepted but internally overridden by a hardcoded `maxemt <- 100`. Now correctly uses `maxiter` as the iteration limit.
+
+- **Fixed spurious "No ID column detected" message in `Biclustering.rated()` and `Biclustering_IRM.rated()`**: The `crr()` function was called with a raw matrix (`tmp$Z * tmp$U`) instead of an exametrika object, triggering an unnecessary `dataFormat()` call. Now creates a temporary binary-typed exametrika object to avoid the message.
+
+# exametrika 1.10.2
+
+## New Features
+
+- **`Biclustering.rated()`: Rated (multiple-choice) Biclustering**: Performs biclustering for rated data (items with correct answers and multiple response categories). Internally calls `Biclustering.nominal()` for estimation, then post-processes the results: classes are sorted by correct response rate (ranklustering), and two layers of fit indices are reported — binary (item correct/incorrect, with full benchmark model) and nominal (category-level, AIC/BIC/CAIC only). The binary layer uses item-level correct response rates per class without field constraints (`nparam = nitems * ncls`). Supports both Biclustering (`method = "B"`) and Ranklustering (`method = "R"`) modes. Returns `TestFitIndices` (binary) and `TestFitIndices_nominal` (nominal) in the output. Added 16 tests for rated Biclustering using J35S5000.
+
+## Improvements
+
+- **Renamed `ItemFRP` to `quasiFRP` in `Biclustering.rated()` output**: The item-level correct response rate matrix (J x C) is computed without field constraints because the field assignments come from nominal analysis and have different meaning in the binary context. The name `quasiFRP` (quasi Field Reference Profile) clarifies this distinction from the standard field-constrained FRP.
+
+## Bug Fixes
+
+- **Fixed `subscript out of bounds` in nominal/ordinal Biclustering with large `nfld`**: The initial field assignment `ceiling(1:nitems / (nitems / nfld))` could exceed `nfld` due to floating-point rounding. Added `pmin(..., nfld)` clamping, consistent with the binary Biclustering fix already in place.
+- **Fixed redundant `dataFormat()` call in `Biclustering.rated()`**: The function was unnecessarily re-calling `dataFormat()` on already-formatted data, causing repeated "No ID column detected" messages during `GridSearch()`. Now reuses the existing exametrika object directly.
+- **Fixed Array plot for polytomous Biclustering (rated/nominal/ordinal)**: Array plots for polytomous Biclustering models were rendered in black and white because `x$U` (binary correctness matrix) was used instead of `x$Q` (polytomous responses). Now correctly uses `x$Q` for polytomous models.
+- **Fixed FCRP plot `invalid graphics state` error**: `par(mfrow=...)` and `layout()` conflicted when plotting FCRP/FCBR. Now skips `par(mfrow=...)` for plot types that use `layout()` internally.
+- **Improved `id` parameter validation in `dataFormat()`**: When a vector (e.g., `id = tmp$ID`) was passed instead of a column number, the error message was cryptic (`the condition has length > 1`). Now validates that `id` is a single integer and provides a clear error message.
+- **Fixed nominal Biclustering/IRM fit indices**: Removed benchmark (saturated) model for nominal data. With many items and categories, every examinee has a unique response pattern, making the benchmark model trivially saturated (`ell_B = 0`) and chi-square based indices (NFI, RFI, IFI, TLI, CFI, RMSEA) meaningless. These indices are now reported as `NA` for nominal data. Information criteria (AIC, BIC, CAIC) are computed directly from the model log-likelihood and remain available. Also fixed a `length(benchGroup)` → `length(unique(benchGroup))` bug in `Biclustering.nominal()` (the `unique()` call was missing).
+
+## Improvements
+
+- **Added empty field warning for all Biclustering models**: When some fields have no items assigned (e.g., due to specifying too many fields), a warning message is now emitted suggesting to reduce `nfld`. Affects `Biclustering()` (binary/ordinal/nominal), `Biclustering_IRM()` (binary/ordinal/nominal).
+- **Renamed `field` to `fld` in `Biclustering_IRM.binary()`**: Internal variable name changed from `field` to `fld` for consistency with other Biclustering models. No change to the public API (`FieldEstimated` output name is unchanged).
+
+## Documentation Fix
+
+- **Fixed J35S5000 UseCase in data format tables**: Corrected from "Nominal LRA" to "Rated LRA" in getting-started vignette, and from "名義LRA" to "評定LRA" in Japanese guide. J35S5000 is a rated (multiple-choice with correct answers) dataset, not nominal.
+- **Fixed J15S3810 roxygen documentation**: The `@format` field incorrectly stated "nominal responses" but the dataset is ordinal (`response.type=ordinal`). Also fixed "A ordinal" to "An ordinal" in `@description`.
+
 # exametrika 1.10.1
 
 ## Vignette Build Time Reduction

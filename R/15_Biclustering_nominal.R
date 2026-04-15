@@ -38,7 +38,7 @@ Biclustering.nominal <- function(U,
   test_log_lik <- -1 / const
   old_test_log_lik <- -2 / const
   emt <- 0
-  maxemt <- 100
+  maxemt <- maxiter
 
   ncat <- as.vector(tmp$categories)
 
@@ -85,7 +85,7 @@ Biclustering.nominal <- function(U,
   }
 
   ##
-  fld0 <- ceiling(1:nitems / (nitems / nfld))
+  fld0 <- pmin(ceiling(1:nitems / (nitems / nfld)), nfld)
   med_order <- order(apply(tmp$Q, 2, median), decreasing = TRUE)
   fld <- fld0[match(1:nitems, med_order)]
   fldmemb <- matrix(0, nrow = nitems, ncol = nfld)
@@ -124,7 +124,7 @@ Biclustering.nominal <- function(U,
       break
     }
     if (emt == maxemt) {
-      message("\nReached ten times the maximum number of iterations.")
+      message("\nReached the maximum number of iterations (", maxemt, ").")
       message("Warning: Algorithm may not have converged. Interpret results with caution.")
       converge <- FALSE
       FLG <- FALSE
@@ -194,6 +194,7 @@ Biclustering.nominal <- function(U,
   # output ----------------------------------------------------------
   cls <- apply(clsmemb, 1, which.max)
   fld <- apply(fldmemb, 1, which.max)
+  check_empty_fields(fld, nfld)
   fldmemb01 <- sign(fldmemb - apply(fldmemb, 1, max)) + 1
   flddist <- colSums(fldmemb01)
   clsmemb01 <- sign(clsmemb - apply(clsmemb, 1, max)) + 1
@@ -212,52 +213,37 @@ Biclustering.nominal <- function(U,
   }
   nparam <- ncls * nfld * (maxQ - 1)
 
-  # Full model
-  ptn <- apply(tmp$Q * tmp$Z, 1, function(x) paste(x, collapse = ""))
-  benchGroup <- as.numeric(as.factor(ptn))
-  fullG <- length(benchGroup)
-  benchmemb <- matrix(0, nrow = nobs, ncol = fullG)
-  for (i in 1:nobs) {
-    benchmemb[i, benchGroup[i]] <- 1
-  }
-
-  BenchFRQ <- array(NA, dim = c(nitems, fullG, maxQ))
-  Bfcq <- array(0, dim = c(nitems, fullG, maxQ))
-  for (q in 1:maxQ) {
-    Bfcq[, , q] <- (t(tmp$Z * Uq[, , q])) %*% benchmemb
-  }
-
-  BenchFRQ <- Bfcq / array(apply(Bfcq, c(1, 2), sum), dim = dim(BenchFRQ))
-  BenchFRQ[is.nan(BenchFRQ)] <- const
-
-  ell_B <- 0
-  for (q in 1:maxQ) {
-    ell_B <- ell_B + sum(t(tmp$Z * Uq[, , q]) %*% benchmemb * log(BenchFRQ[, , q] + const))
-  }
-  bench_nparam <- nitems * fullG
-
   # Null model
   Zrep <- replicate(maxQ, tmp$Z)
   NullFRQ <- apply(Zrep * Uq, c(2, 3), sum) / apply(tmp$Z, 2, sum)
   ell_N <- sum(apply(Zrep * Uq, c(2, 3), sum) * log(NullFRQ + const))
-  null_nparam <- nitems
 
+  # Fit indices: For nominal data, no meaningful benchmark (saturated) model exists
+  # because response patterns are almost always unique with many items and categories.
+  # Only information criteria (AIC, BIC, CAIC) are reported.
+  AIC <- -2 * testell + 2 * nparam
+  CAIC <- -2 * testell + nparam * (log(nobs) + 1)
+  BIC <- -2 * testell + nparam * log(nobs)
 
-  df_B <- bench_nparam - null_nparam
-  chi_B <- 2 * (ell_B - ell_N)
-  # Analysis model
-  chi_A <- 2 * (ell_B - testell)
-  df_A <- bench_nparam - nparam
   FitIndices <- structure(
-    c(list(
+    list(
       model_log_like = testell,
-      bench_log_like = ell_B,
+      bench_log_like = NA,
       null_log_like = ell_N,
-      model_Chi_sq = chi_A,
-      null_Chi_sq = chi_B,
-      model_df = df_A,
-      null_df = df_B
-    ), calcFitIndices(chi_A, chi_B, df_A, df_B, nobs)),
+      model_Chi_sq = NA,
+      null_Chi_sq = NA,
+      model_df = NA,
+      null_df = NA,
+      NFI = NA,
+      RFI = NA,
+      IFI = NA,
+      TLI = NA,
+      CFI = NA,
+      RMSEA = NA,
+      AIC = AIC,
+      CAIC = CAIC,
+      BIC = BIC
+    ),
     class = c("exametrika", "ModelFit")
   )
 
