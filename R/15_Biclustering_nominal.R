@@ -26,6 +26,7 @@
 Biclustering.nominal <- function(U,
                                  ncls = 2, nfld = 2,
                                  conf = NULL,
+                                 conf_class = NULL,
                                  mic = FALSE,
                                  maxiter = 100,
                                  verbose = TRUE,
@@ -50,15 +51,15 @@ Biclustering.nominal <- function(U,
     }
     if (is.vector(conf)) {
       # check size
-      if (length(conf) != NCOL(U)) {
+      if (length(conf) != NCOL(U$Q)) {
         stop("conf vector size does NOT match with data.")
       }
-      conf_mat <- matrix(0, nrow = NCOL(U), ncol = max(conf))
+      conf_mat <- matrix(0, nrow = NCOL(U$Q), ncol = max(conf))
       for (i in 1:NROW(conf_mat)) {
         conf_mat[i, conf[i]] <- 1
       }
     } else if (is.matrix(conf) | is.data.frame(conf)) {
-      if (NROW(conf) != NCOL(U)) {
+      if (NROW(conf) != NCOL(U$Q)) {
         stop("conf matrix size does NOT match with data.")
       }
       if (any(!conf %in% c(0, 1))) {
@@ -67,6 +68,7 @@ Biclustering.nominal <- function(U,
       if (any(rowSums(conf) > 1)) {
         stop("The row sums of the conf matrix must be equal to 1.")
       }
+      conf_mat <- as.matrix(conf)
     } else {
       stop("conf matrix is not set properly.")
     }
@@ -74,6 +76,38 @@ Biclustering.nominal <- function(U,
     nfld <- NCOL(conf_mat)
   } else {
     conf_mat <- NULL
+  }
+
+  # set conf_class_mat for class-side confirmatory clustering
+  if (!is.null(conf_class)) {
+    if (verbose) {
+      message("Class-side Confirmatory Clustering is chosen.")
+    }
+    if (is.vector(conf_class)) {
+      if (length(conf_class) != nobs) {
+        stop("conf_class vector size does NOT match with the number of respondents.")
+      }
+      conf_class_mat <- matrix(0, nrow = nobs, ncol = max(conf_class))
+      for (i in 1:NROW(conf_class_mat)) {
+        conf_class_mat[i, conf_class[i]] <- 1
+      }
+    } else if (is.matrix(conf_class) | is.data.frame(conf_class)) {
+      if (NROW(conf_class) != nobs) {
+        stop("conf_class matrix size does NOT match with the number of respondents.")
+      }
+      if (any(!conf_class %in% c(0, 1))) {
+        stop("The conf_class matrix should only contain 0s and 1s.")
+      }
+      if (any(rowSums(conf_class) > 1)) {
+        stop("The row sums of the conf_class matrix must be equal to 1.")
+      }
+      conf_class_mat <- as.matrix(conf_class)
+    } else {
+      stop("conf_class is not set properly.")
+    }
+    ncls <- NCOL(conf_class_mat)
+  } else {
+    conf_class_mat <- NULL
   }
 
   if (ncls < 2 | ncls > 20) {
@@ -107,19 +141,26 @@ Biclustering.nominal <- function(U,
     }
   }
 
+  # One-hot encode tmp$Q into Uq[i, j, tmp$Q[i,j]] = 1 using matrix indexing.
+  # Replaces a nobs*nitems R-level double loop with a single C-level write
+  # into the flat backing storage of the 3-D array.
+  # Missing entries (tmp$Z == 0) are left at zero; every downstream use of
+  # Uq is masked by tmp$Z so the missing-cell values are never read.
   Uq <- array(0, dim = c(nobs, nitems, maxQ))
-  for (i in 1:nobs) {
-    for (j in 1:nitems) {
-      q <- tmp$Q[i, j]
-      Uq[i, j, q] <- 1
-    }
-  }
+  valid <- as.vector(tmp$Z) == 1
+  Uq[cbind(
+    rep(seq_len(nobs), times = nitems)[valid],
+    rep(seq_len(nitems), each = nobs)[valid],
+    as.vector(tmp$Q)[valid]
+  )] <- 1
 
   # iteration -------------------------------------------------------
   converge <- TRUE
   FLG <- TRUE
   while (FLG) {
-    if (test_log_lik - old_test_log_lik < 1e-8 * abs(old_test_log_lik)) {
+    if (!is.finite(test_log_lik) ||
+      test_log_lik - old_test_log_lik < 1e-8 * abs(old_test_log_lik)) {
+      if (!is.finite(test_log_lik)) converge <- FALSE
       FLG <- FALSE
       break
     }
@@ -142,6 +183,10 @@ Biclustering.nominal <- function(U,
     expllsr <- exp(pmin(tmpL - minllsr, 700))
     clsmemb <- round(expllsr / rowSums(expllsr), 1e8)
 
+    if (!is.null(conf_class_mat)) {
+      clsmemb <- conf_class_mat
+    }
+
     tmpH <- matrix(0, nrow = nitems, ncol = nfld)
     for (q in 1:maxQ) {
       tmpH <- tmpH + (t(tmp$Z * Uq[, , q]) %*% clsmemb) %*% t(log(BCRM[, , q] + const))
@@ -162,8 +207,10 @@ Biclustering.nominal <- function(U,
       Ufcq[, , q] <- (t(fldmemb) %*% t(tmp$Z * Uq[, , q])) %*% clsmemb
     }
 
-    # Apply Dirichlet prior (alpha parameter)
-    BCRM <- (Ufcq + alpha - 1) / array(apply(Ufcq, c(1, 2), sum) + maxQ * alpha - maxQ, dim = dim(BCRM))
+    # Apply Dirichlet prior (alpha parameter).
+    # rowSums(Ufcq, dims=2) sums over the 3rd dim (categories), replacing
+    # apply(Ufcq, c(1,2), sum) at C-level instead of per-cell apply.
+    BCRM <- (Ufcq + alpha - 1) / array(rowSums(Ufcq, dims = 2) + maxQ * alpha - maxQ, dim = dim(BCRM))
 
     test_log_lik <- 0
     for (q in 1:maxQ) {
@@ -184,8 +231,9 @@ Biclustering.nominal <- function(U,
       )
     }
 
-    if (test_log_lik - old_test_log_lik <= 0) {
+    if (!is.finite(test_log_lik) || test_log_lik - old_test_log_lik <= 0) {
       BCRM <- oldBCRM
+      if (!is.finite(test_log_lik)) converge <- FALSE
       break
     }
   }
@@ -213,10 +261,14 @@ Biclustering.nominal <- function(U,
   }
   nparam <- ncls * nfld * (maxQ - 1)
 
-  # Null model
-  Zrep <- replicate(maxQ, tmp$Z)
-  NullFRQ <- apply(Zrep * Uq, c(2, 3), sum) / apply(tmp$Z, 2, sum)
-  ell_N <- sum(apply(Zrep * Uq, c(2, 3), sum) * log(NullFRQ + const))
+  # Null model.
+  # Zrep * Uq = Z * Uq[,,q] elementwise; compute via column-major recycling
+  # (Uq * as.vector(Z)) which avoids the replicate() allocation.
+  # colSums(X, dims=1) sums over the 1st dim, replacing apply(X, c(2,3), sum).
+  ZU <- Uq * as.vector(tmp$Z)
+  ZU_col_sums <- colSums(ZU, dims = 1)
+  NullFRQ <- ZU_col_sums / colSums(tmp$Z)
+  ell_N <- sum(ZU_col_sums * log(NullFRQ + const))
 
   # Fit indices: For nominal data, no meaningful benchmark (saturated) model exists
   # because response patterns are almost always unique with many items and categories.

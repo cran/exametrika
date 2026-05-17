@@ -216,3 +216,103 @@ test_that("Ranklustering Students", {
     as.numeric()
   expect_equal(result, expect, tolerance = 1e-4)
 })
+
+
+### Confirmatory Biclustering (binary)
+conf_b <- c(rep(1, 7), rep(2, 7), rep(3, 7), rep(4, 7), rep(5, 7))
+Bic_conf <- Biclustering(J35S515, ncls = 5, nfld = 5, method = "B", conf = conf_b, verbose = FALSE)
+
+test_that("binary confirmatory respects field assignments", {
+  expect_equal(as.numeric(Bic_conf$FieldEstimated), conf_b)
+})
+
+test_that("binary confirmatory rejects wrong-length conf vector", {
+  expect_error(
+    Biclustering(J35S515,
+      ncls = 5, nfld = 5, method = "B",
+      conf = rep(1:5, each = 6), verbose = FALSE
+    ),
+    "conf vector size does NOT match"
+  )
+})
+
+test_that("binary confirmatory accepts membership matrix", {
+  conf_mat <- matrix(0, nrow = 35, ncol = 5)
+  for (i in seq_len(35)) conf_mat[i, conf_b[i]] <- 1
+  res <- Biclustering(J35S515,
+    ncls = 5, nfld = 5, method = "B",
+    conf = conf_mat, verbose = FALSE
+  )
+  expect_equal(as.numeric(res$FieldEstimated), conf_b)
+})
+
+test_that("binary confirmatory rejects wrong-row matrix", {
+  bad <- matrix(0, nrow = 30, ncol = 5)
+  bad[cbind(seq_len(30), rep(1:5, each = 6))] <- 1
+  expect_error(
+    Biclustering(J35S515,
+      ncls = 5, nfld = 5, method = "B",
+      conf = bad, verbose = FALSE
+    ),
+    "conf matrix size does NOT match"
+  )
+})
+
+
+### Class-side Confirmatory Biclustering (binary)
+nobs_b <- NROW(dataFormat(J35S515)$U)
+conf_class_b <- ((seq_len(nobs_b) - 1) %% 5) + 1
+
+test_that("binary B class-side confirmatory respects class assignments", {
+  res <- Biclustering(J35S515,
+    ncls = 5, nfld = 5, method = "B",
+    conf_class = conf_class_b, verbose = FALSE
+  )
+  est <- apply(res$ClassMembership, 1, which.max)
+  expect_equal(as.numeric(est), conf_class_b)
+})
+
+test_that("binary R class-side confirmatory respects class assignments and skips smoothing", {
+  res <- Biclustering(J35S515,
+    ncls = 5, nfld = 5, method = "R",
+    conf_class = conf_class_b, verbose = FALSE
+  )
+  est <- apply(res$ClassMembership, 1, which.max)
+  expect_equal(as.numeric(est), conf_class_b)
+  expect_equal(
+    as.numeric(res$SmoothedMembership),
+    as.numeric(res$ClassMembership)
+  )
+})
+
+test_that("binary class-side confirmatory rejects wrong-length conf_class", {
+  expect_error(
+    Biclustering(J35S515,
+      ncls = 5, nfld = 5, method = "B",
+      conf_class = 1:10, verbose = FALSE
+    ),
+    "conf_class vector size does NOT match"
+  )
+})
+
+test_that("binary class-side confirmatory accepts membership matrix", {
+  cm <- matrix(0, nrow = nobs_b, ncol = 5)
+  for (i in seq_len(nobs_b)) cm[i, conf_class_b[i]] <- 1
+  res <- Biclustering(J35S515,
+    ncls = 5, nfld = 5, method = "B",
+    conf_class = cm, verbose = FALSE
+  )
+  est <- apply(res$ClassMembership, 1, which.max)
+  expect_equal(as.numeric(est), conf_class_b)
+})
+
+test_that("binary conf and conf_class can be combined", {
+  res <- Biclustering(J35S515,
+    ncls = 5, nfld = 5, method = "B",
+    conf = conf_b,
+    conf_class = conf_class_b, verbose = FALSE
+  )
+  est <- apply(res$ClassMembership, 1, which.max)
+  expect_equal(as.numeric(res$FieldEstimated), conf_b)
+  expect_equal(as.numeric(est), conf_class_b)
+})

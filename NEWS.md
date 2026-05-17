@@ -1,3 +1,349 @@
+# exametrika 1.13.1
+
+Resubmission of the 1.13.0 release. The 1.13.0 submission was rejected
+by the CRAN auto-check service for a single `Overall checktime` NOTE on
+r-devel-windows-x86_64 (11 min vs. the 10 min limit). The package itself
+passed cleanly on both Windows and Debian (Status: OK / OK).
+
+## Test suite (no user-visible changes)
+
+- The two heaviest test files now skip their slowest blocks on CRAN to
+  keep `R CMD check` comfortably under the 10-minute Windows limit. The
+  same tests continue to run locally and on R-hub / win-devel via the
+  `NOT_CRAN` environment variable that testthat sets.
+  - `test-grm.R`: the `J15S3810` regression (a 15-item / 3,810-respondent
+    fit, ~60s) and the `nitems >= 8` underflow regression (~8s) are
+    skipped on CRAN. Default-coverage GRM tests on small data continue
+    to run on CRAN.
+  - `test-irm.R`: the `J35S515` shared-fixture Gibbs run (~23s) and the
+    two reproducibility tests that re-run Gibbs (~22s combined) are
+    skipped on CRAN. The `Default seed is 123` structural check still
+    runs on CRAN.
+
+# exametrika 1.13.0
+
+This release also incorporates the development changes from 1.12.0–1.12.2
+(never published to CRAN). Their entries are retained below for traceability.
+
+## New features
+
+- **Graphical Lasso (`Glasso`)**: New function for sparse precision matrix
+  estimation from ordinal item response data. The polychoric correlation
+  matrix is computed internally and the optimal regularization parameter
+  is selected by Extended Bayesian Information Criterion (EBIC; Foygel
+  and Drton 2010). Implements block coordinate descent (Friedman, Hastie,
+  Tibshirani 2008; Algorithm 17.2 of Hastie, Tibshirani, Friedman 2009)
+  with cyclical coordinate descent for the inner lasso step. Warm-starting
+  across the lambda grid accelerates the search.
+
+  Internal helpers `glasso_one()` (single-lambda solver) and
+  `compute_EBIC_glasso()` (EBIC computation) are available but not
+  exported.
+
+  Returns a list with `theta` (selected precision matrix), `lambda_opt`
+  (selected lambda), `ebic_opt`, `n_edge`, and `path` (data frame of
+  lambda, ebic, n_edge over the search grid).
+
+- **`print.exametrika` Glasso method**: Added a Glasso branch to the
+  shared `print.exametrika()` dispatcher to summarize the estimated
+  model (optimal lambda, EBIC value, edge count, precision matrix).
+
+- **Chatterjee's xi correlation (`chatterjee_xi`, `xi_stable`,
+  `chatterjee_matrix`)**: New family of functions implementing
+  Chatterjee's (2021) rank-based correlation coefficient.
+  `chatterjee_xi()` computes the single-shot value with random
+  tie-breaking. `xi_stable()` averages B replications (default
+  B = 1000) to stabilize against tie-induced variability and returns
+  a list with the mean, standard deviation, standard error, and B.
+  `chatterjee_matrix()` produces the p x p asymmetric pairwise xi
+  matrix from ordinal data with pairwise-complete handling of
+  missing values; the asymmetry between xi(j, k) and xi(k, j)
+  enables direction detection in graphical-model construction.
+
+## Documentation and CRAN check cleanup
+
+- **Roxygen Markdown bracket escapes**: Wrapped bracketed expressions
+  inside roxygen blocks of `Glasso()` and `chatterjee_matrix()` in
+  backticks (e.g., `` `[0, 1]` ``, `` `[j, k]` ``, `` `Q[i, j]` ``) so
+  that roxygen2 no longer rewrites them as `\link{}` cross-references.
+  Resolves R CMD check WARNINGs about missing link targets.
+- **`Glasso()` `...` documented**: Added `@param ...` to `Glasso()` so
+  that R CMD check's "Undocumented arguments" WARNING is cleared.
+- **`compute_EBIC_glasso()` partial-match fix**: Replaced
+  `determinant(Theta, log = TRUE)` with the full argument name
+  `logarithm = TRUE`, removing the partial-argument-match NOTE.
+
+# exametrika 1.12.2
+
+## Bug fixes
+
+- **`dataFormat(response.type = "rated")` no longer errors when a CA
+  category is unobserved**: previously, if no respondent chose item
+  `j`'s correct-answer category (e.g., everyone got it wrong on a hard
+  item, or the sample was small enough that the CA category did not
+  appear by chance), `dataFormat()` aborted with
+  `"CA for item j is not a valid response category"`. This rejected
+  legitimate test data where an item is uniformly difficult or where
+  the sample size is small. The check has been relaxed to a
+  `warning()`; the affected items are encoded as all-incorrect (`U[, j]
+  == 0`), which is the correct downstream behavior. This applies to
+  both the matrix-input path (`dataFormat`) and the long-format path
+  (`longdataFormat`). Mistyped CAs (e.g., `CA[j] = 8` when categories
+  are 1–7) still surface as warnings, so the diagnostic value is
+  preserved.
+
+# exametrika 1.12.1
+
+## Bug fixes
+
+- **Biclustering EM stability for empty fields/classes**: Both
+  `Biclustering.nominal()` and `Biclustering.ordinal()` no longer abort
+  with `"missing value where TRUE/FALSE needed"` when extreme grid
+  configurations (e.g., very small `ncls` combined with very large
+  `nfld`) leave fields or classes empty during EM. The two
+  log-likelihood checks inside the EM loop — the relative convergence
+  test and the monotonicity guard — now treat a non-finite
+  `test_log_lik` as a non-converged exit instead of throwing. Affected
+  cells are returned with `converge = FALSE` so that `GridSearch()`
+  skips them automatically when comparing criteria. This also resolves
+  the same crash in `Biclustering.rated()`, which calls
+  `Biclustering.nominal()` internally.
+
+# exametrika 1.12.0
+
+## New features
+
+- **Class-side Confirmatory Biclustering**: `Biclustering()` now accepts
+  a `conf_class` argument that fixes class memberships during EM. Like
+  `conf` (which fixes field memberships), `conf_class` accepts either a
+  vector of class labels (one per respondent) or a 0/1 membership matrix
+  (respondents x classes). When supplied, the class-side E-step is
+  overridden every iteration. For Ranklustering (`method = "R"`), the
+  neighbour-smoothing step is skipped (`smoothed_memb <- clsmemb`) since
+  smoothing pre-fixed labels would defeat the purpose of fixing them.
+  Available for `binary`, `ordinal`, `nominal`, and `rated` data; can be
+  combined with `conf` to fix both fields and classes simultaneously.
+  Note: `rated` re-orders classes by correct rate after estimation, so
+  the output class labels may not match the input labels (the
+  individual-to-class mapping is preserved up to relabeling).
+
+  Number of model parameters (`nparam`) is intentionally not adjusted
+  when `conf` or `conf_class` is in effect: only PiFR / BCRM cell
+  probabilities count as parameters in this implementation, and
+  membership matrices are latent posteriors, not parameters.
+
+## Bug fixes
+
+- **Confirmatory ordinal Biclustering: field membership now stays fixed
+  during EM**: `Biclustering.ordinal()` was overwriting `fldmemb` with the
+  E-step estimate every iteration, so the `conf`/`conf_mat` argument only
+  affected the initial value. Aligned the implementation with
+  `Biclustering.binary()` by re-applying `fldmemb <- conf_mat` immediately
+  after the field-side E-step. With this fix `result$FieldEstimated`
+  matches the user-supplied assignment exactly.
+- **Confirmatory nominal Biclustering: conf argument is now actually
+  honored**: `Biclustering.nominal()` validated `length(conf)` against
+  `NCOL(U)`, but `U` is an `exametrika` list object so `NCOL(U)` always
+  returned 1. The check rejected every well-formed `conf` vector with
+  "conf vector size does NOT match with data.", making confirmatory
+  nominal Biclustering unreachable since v1.10.0. Replaced with
+  `NCOL(U$Q)` (and the matrix-form `NROW(conf)` check, plus the
+  `conf_mat` allocation, in the same way).
+- **Confirmatory ordinal Biclustering: conf length check actually
+  validates input**: same `NCOL(U)` issue as nominal, but in
+  `Biclustering.ordinal()`. Fixed by switching to `NCOL(U$Q)`.
+- **Confirmatory binary Biclustering: conf size checks now reference the
+  formatted response matrix explicitly**: `Biclustering.binary()` happened
+  to work because `U` is rebound to `tmp$U * tmp$Z` before the conf block,
+  so `NCOL(U)` returned the item count. Switched to `NCOL(tmp$U)` for
+  consistency with the ordinal/nominal fixes and to make the intent
+  obvious to readers.
+- **Confirmatory Biclustering: matrix-form `conf` is no longer silently
+  dropped**: when `conf` was supplied as a membership matrix
+  (items x fields) instead of a vector, all three implementations
+  (`binary`, `ordinal`, `nominal`) validated the matrix but never copied
+  it into `conf_mat`, so the subsequent `nfld <- NCOL(conf_mat)` failed
+  with `object 'conf_mat' not found`. Added `conf_mat <- as.matrix(conf)`
+  in the matrix branch.
+
+- **`Biclustering.ordinal()` now honors the `maxiter` argument**: The
+  inner EM iteration cap was hardcoded to 100 (`maxemt <- 100`) and
+  ignored the user-supplied `maxiter`. This mirrors the bug that was
+  fixed for `Biclustering.nominal()` in 1.11.0. Callers that pass a
+  larger `maxiter` (e.g. `2000` in Monte Carlo studies) now actually
+  use that ceiling.
+
+- **`GRM()` fit indices no longer return `NaN` for moderate or larger
+  item counts**: The benchmark model used
+  `const <- exp(-nitems * 100)` as a log-domain epsilon inside
+  `sum(cat_counts * log(cat_probs + const))`. For about 8 or more items
+  this expression underflows to exactly 0 in IEEE-754 double precision,
+  so `log(0) = -Inf` propagates through `0 * -Inf = NaN` and poisons
+  every downstream index (model_Chi_sq, NFI, CFI, RMSEA, AIC, CAIC,
+  BIC). The benchmark and null loops now skip zero-count categories
+  explicitly, removing the need for an additive epsilon.
+
+- **`GRM()` degrees of freedom were computed incorrectly**: The model
+  df was set to `n_pattern * (ncat - 1) + 1` and the null df to
+  `n_pattern * (ncat - 1)`, which is neither `(# bench params) - (#
+  model params)` nor `(# bench params) - (# null params)`. The inflated
+  df then clamped `CFI`, `TLI`, `IFI`, and `RMSEA` to zero whenever
+  `chi^2 < df` (and the previous `df_A > df_B` inequality was the wrong
+  direction to begin with). The convention now matches
+  `Biclustering.ordinal()`:
+  - `bench_nparam_j = n_pattern * (ncat_j - 1)`
+  - `null_nparam_j  = ncat_j - 1`
+  - `model_nparam_j = ncat_j`  (one slope plus `ncat_j - 1` thresholds)
+  - `df_A_j = bench_nparam_j - model_nparam_j`
+  - `df_B_j = bench_nparam_j - null_nparam_j`
+
+- **`GRM()` now accepts any integer-coded ordinal responses, not just
+  1..K**: Category counts were derived from `apply(dat, 2, max)`, which
+  assumes responses are already 1-indexed. Data coded from 0 (e.g.
+  0..3) or with gaps (e.g. 1, 2, 4) undercounted `ncat[j]` by one or
+  more and then indexed `grm_prob()[resp]` / `v[resp]` out of range,
+  producing either an outright `invalid subscript type 'list'` error
+  (on `J15S3810`-style data) or silently truncated threshold columns.
+  Each item's responses are now remapped to contiguous 1..K codes via
+  `match()` against the sorted unique values on entry, with `ncat[j]`
+  derived from the mapped levels; both the R model-fit blocks and the
+  C++ log-likelihood receive 1-based input regardless of the user's
+  coding.
+
+- **`GridSearch()` now tolerates per-cell fit errors**: Previously, a
+  single `Biclustering()` (or `LCA()` / `LRA()`) call that raised an
+  error at a grid corner (for example, empty-cluster edge cases at
+  large `ncls`/`nfld` with small `nobs`/`nitems`) would propagate out
+  of `GridSearch()` and abort the entire grid. The call to the
+  underlying analysis function is now wrapped in `tryCatch`, and
+  errors are handled the same way as non-convergence: the cell is
+  marked `NA` in the index matrix and the `(ncls, nfld)` pair is
+  recorded in `failed_settings`. `GridSearch()` still raises only
+  when *all* grid cells fail, preserving the existing "all-failed"
+  error.
+
+## Performance
+
+- **C++ implementation of the IRM Gibbs sampler core**: The collapsed
+  Gibbs sampler shared by `Biclustering_IRM.nominal()`,
+  `Biclustering_IRM.ordinal()`, and `Biclustering_IRM.rated()` is now
+  implemented in C++ via Rcpp (`src/irm_gibbs_core.cpp`). The R
+  reference implementation in `R/00_IRM_Gibbs_CORE.R` is preserved
+  behind `irm_gibbs_core(..., use_cpp = FALSE)` for cross-checking.
+
+  - **Numerical reproducibility (revised 2026-05-07)**: RNG calls are
+    routed through R-level `sample.int()` and `rmultinom()` (via
+    `Rcpp::Function`) so the `unif_rand()` consumption order matches
+    base R exactly. The C-level entry points (`Rcpp::sample`,
+    `R::rmultinom`) consume RNG differently from base R and were
+    explicitly avoided.
+
+    The C++ and R reference paths are bit-identical for the first
+    Gibbs iterations on the bundled test datasets and on real
+    polytomous data (verified through iteration 2 on J143S32 ordinal),
+    but **diverge from iteration 3 onward** on real data due to
+    sub-LSB floating-point ordering differences accumulating through
+    the `lmvbeta()` calls in the CRP likelihood. Once the divergence
+    flips a single `rmultinom()` outcome, the two chains follow
+    different sample paths.
+
+    Empirically the two paths still **target the same posterior**:
+    on a 50-seed comparison (M = 66 ordinal items, N = 143), the
+    marginal distributions of `n_field` and `n_class` are
+    statistically indistinguishable between paths (Wilcoxon
+    p = 0.56 / 0.81). Use either path for inference; do not rely
+    on a single seed reproducing the same `(n_field, n_class)`
+    across the two paths.
+
+    The parity tests in `tests/testthat/test-irm-gibbs-cpp.R`
+    cover only short runs (<= 10 iterations) and therefore did not
+    catch this. A longer-iteration test on real-data-like
+    configurations is on the roadmap.
+  - **Wall-clock**: roughly 4x speedup on the inner Gibbs loop on the
+    bundled test datasets (J20S600 nominal: 82 to 20 ms/iter;
+    J35S500 ordinal: 76 to 19 ms/iter). The end-to-end
+    `Biclustering_IRM()` call also benefits proportionally on larger
+    iteration counts (e.g. simulation runs).
+  - **No new dependencies**: Rcpp is already in `LinkingTo:`; the
+    implementation uses only `Rcpp::Function` and `<vector>`/`<cmath>`.
+
+- **Vectorized EM hot path in `Biclustering.ordinal()`**: The per-iteration
+  cost of the ordinal EM loop has been reduced by rewriting five hot spots
+  in base R without introducing new package dependencies.
+    - Replaced `apply(Ufcq_prior, c(1, 2), function(x) rev(cumsum(rev(x))))`
+      with an in-place reverse cumulative sum loop over the category axis.
+      The previous form dispatched `nfld * ncls` R-level calls per EM
+      iteration; the new form performs `maxQ - 1` vectorized array
+      additions.
+    - Replaced `apply(X, 1, min)` and `apply(X, 1, max)` with
+      `do.call(pmin.int, as.data.frame(X))` /
+      `do.call(pmax.int, as.data.frame(X))`. These compute the row-wise
+      reduction in a small number of C-level calls rather than one
+      R-level call per row. `apply(X, 1, which.max)` was similarly
+      replaced by `max.col(X, ties.method = "first")`.
+    - Precomputed `log(BBRM[,,q] - BBRM[,,q+1] + const)` once per EM
+      iteration instead of independently in the class-side and field-side
+      E-steps for every `q`.
+    - Precomputed `Z * Uq[,,q]` once per fit (call it `ZU`) via
+      column-major recycling (`Uq * as.vector(Z)`), replacing about eight
+      separate elementwise products per EM iteration and reusing the
+      same array in the post-EM fit-index blocks. The `replicate(maxQ, Z)`
+      allocation that produced `Zrep` has been removed as a byproduct.
+    - Replaced `apply(X, c(1, 2), sum)` and `apply(X, c(2, 3), sum)` on
+      3-D arrays with `rowSums(X, dims = 2)` / `colSums(X, dims = 1)`,
+      and `apply(M, 2, sum)` on matrices with `colSums(M)`.
+
+  Output is bit-identical to 1.11.0 on every tested configuration
+  (`max(abs(old - new)) == 0` for `BCRM`, `BBRM`, `ClassMembership`,
+  `FieldMembership`, `TestFitIndices`, and the full EM trajectory).
+  Single-fit wall-clock on typical sizes (ncls, nfld up to 20 by 15 on
+  J35S500) improves by roughly 1.2 to 1.3 times; the per-EM-iteration
+  speedup compounds across `GridSearch()` grids.
+
+- **Vectorized 3-D apply reductions in `Biclustering.nominal()`**: The
+  same `rowSums/colSums(X, dims = ...)` substitutions were applied to
+  the nominal M-step and null-model blocks, and `Zrep` was eliminated
+  in favor of the `ZU` precomputation. Output is bit-identical to
+  1.11.0.
+
+- **Vectorized `Uq` one-hot encoding in `Biclustering.ordinal()` and
+  `Biclustering.nominal()`**: The construction of the one-hot response
+  array `Uq[i, j, tmp$Q[i,j]] = 1` previously used a `nobs * nitems`
+  nested R loop. It now writes all ones in one C-level matrix-index
+  assignment, restricted to non-missing cells (`tmp$Z == 1`). Single-fit
+  wall-clock on the validation matrix improves by 1.2-5.3x over 1.11.0
+  (up to 5x on small cases where the loop overhead dominated). Output
+  is bit-identical to 1.11.0 at every downstream location (the missing
+  entries of the old `Uq` were never read because every consumer
+  applies the `tmp$Z` mask).
+
+## Output structure
+
+- **`Biclustering.ordinal()` now returns `SmoothedMembership`**: The
+  smoothed (Ranklustering-filtered) class membership matrix is now part
+  of the return value, mirroring `Biclustering.binary()`. This fills a
+  long-standing gap (only the binary form previously exposed it) and
+  makes Ranklustering with `conf_class` introspectable: callers can
+  verify that the smoothing step is correctly skipped when class labels
+  are pre-fixed (`SmoothedMembership` equals `ClassMembership` in that
+  case).
+
+## Tests
+
+- Added a `print()` smoke test for `Biclustering_IRM.rated()` results
+  (`test-irm-rated.R`).
+- Added an `nrank = 4` `LRA.rated` regression test for
+  `DistractorAnalysis()` to cover varying rank counts
+  (`test-distractor.R`).
+
+## Notes
+
+- No changes to package `Imports` or `Depends`. The new C++ Gibbs
+  sampler uses Rcpp, which was already declared in `LinkingTo:`.
+- No new exported functions. The new `conf_class` argument on
+  `Biclustering()` is additive and defaults to `NULL`, preserving the
+  previous behavior for all existing callers.
+
 # exametrika 1.11.0
 
 ## New Features

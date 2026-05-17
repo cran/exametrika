@@ -66,16 +66,16 @@ plot(result.Ranklustering, type = "LRD")
 # plot(result.B.nom, type = "ScoreField")
 # plot(result.B.nom, type = "RRV")
 
-## ----bic-rated, eval=FALSE----------------------------------------------------
-# result.B.rated <- Biclustering(J21S300, ncls = 5, nfld = 3, method = "R", maxiter = 300)
-# result.B.rated
-# plot(result.B.rated, type = "Array")
-# plot(result.B.rated, type = "FRP", nc = 3, nr = 1)
+## ----bic-rated, message=FALSE, warning=FALSE----------------------------------
+result.B.rated <- Biclustering(J21S300, ncls = 5, nfld = 3, method = "R", maxiter = 300)
+result.B.rated
+plot(result.B.rated, type = "Array")
+plot(result.B.rated, type = "FRP", nc = 3, nr = 1)
 
-## ----irm-rated, eval=FALSE----------------------------------------------------
-# result.IRM.rated <- Biclustering_IRM(J21S300, gamma_c = 1, gamma_f = 1, verbose = TRUE)
-# plot(result.IRM.rated, type = "Array")
-# plot(result.IRM.rated, type = "FRP", nc = 3, nr = 1)
+## ----irm-rated, message=FALSE, warning=FALSE----------------------------------
+result.IRM.rated <- Biclustering_IRM(J21S300, gamma_c = 1, gamma_f = 1, verbose = FALSE)
+plot(result.IRM.rated, type = "Array")
+plot(result.IRM.rated, type = "FRP", nc = 3, nr = 1)
 
 ## ----distractor, eval=FALSE---------------------------------------------------
 # result.B.rated <- Biclustering(J21S300, ncls = 5, nfld = 3, method = "R", maxiter = 300)
