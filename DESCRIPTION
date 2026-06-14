@@ -1,7 +1,7 @@
 Package: exametrika
 Type: Package
 Title: Test Theory Analysis and Biclustering
-Version: 1.13.1
+Version: 1.14.0
 Authors@R: 
     person("Koji Kosugi", , , "kosugitti@gmail.com", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0001-5816-0099"))
@@ -34,8 +34,8 @@ Depends: R (>= 4.1.0)
 Imports: mvtnorm, igraph, Rcpp (>= 1.0.7)
 LinkingTo: Rcpp
 NeedsCompilation: yes
-Packaged: 2026-05-17 20:54:44 UTC; pythagoras
+Packaged: 2026-06-14 22:04:16 UTC; newton
 Author: Koji Kosugi [aut, cre] (ORCID: <https://orcid.org/0000-0001-5816-0099>)
 Maintainer: Koji Kosugi <kosugitti@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-05-17 21:30:02 UTC
+Date/Publication: 2026-06-14 23:40:02 UTC

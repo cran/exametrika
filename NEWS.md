@@ -1,3 +1,106 @@
+# exametrika 1.14.0
+
+## Improvements
+
+- **`plot.exametrika()` now forwards graphical parameters supplied via `...`
+  to every plot type (R Journal review request).** Previously the `...`
+  argument documented on the `plot.exametrika()` help page was captured but
+  never passed on: the internal dispatch functions (`plot_irt_model()`,
+  `plot_grm_model()`, `plot_common_profiles()`, the polytomous Biclustering
+  plotters, the array plot, and the network plotters) did not accept or
+  propagate it, so standard graphical parameters were silently ignored. For
+  example, `plot(result.LRA, type = "IRP", items = 1:4, nc = 2, nr = 2,
+  las = 2, pch = 16)` changed neither the axis-label orientation (`las`)
+  nor the plotting symbol (`pch`).
+
+  User-supplied parameters are now forwarded consistently to the underlying
+  base R plotting calls (`plot`, `barplot`, `image`, `lines`, `curve`) for
+  **all** plot types, **including manually drawn axes** so that `las`,
+  `cex.axis`, and similar parameters take effect on every axis. Standard
+  parameters such as `pch`, `las`, `cex`, `col`, `lty`, and `lwd` work as
+  expected, and user values take precedence over the package defaults, so
+  `xlab`, `ylab`, `main`, etc. can be overridden. This is achieved without
+  adding any dependency: the package remains lightweight and base-graphics
+  only.
+
+  Internally this is implemented via small helpers (`merge_plot_dots()`,
+  `call_plot()`, `draw_curve()`) that merge the package defaults with the
+  user's `...` (user wins) and dispatch through `do.call()`; the IRT/GRM
+  curves are drawn by grid evaluation through `draw_curve()` instead of
+  `curve()` so that the non-standard evaluation of `curve()`'s first
+  argument does not block parameter forwarding.
+
+## Bug fixes
+
+- **IRT Test Information Function plot title typo.** The `type = "TIF"`
+  plot for IRT models had `main = "Test Informaiton Function"`; it now reads
+  `"Test Information Function"` (`R/00_plot_irt.R`).
+
+- **User-facing message typos and missing-word fixes.** Four cosmetic but
+  user-visible string fixes following a family-wide audit (exametrika,
+  ggExametrika, shinyExametrika) prompted by the `Clusterd` -> `Clustered`
+  rename. No behaviour change; messages now read correctly.
+  - `R/04C_ParameterEstimation.R`: IRT slope warning had a missing space
+    after the period (`"... exceeds 10.Please exercise caution ..."`
+    -> `"... exceeds 10. Please exercise caution ..."`).
+  - `R/02_TestItemFunctions.R`: `CCRR.nominal()` info message was missing
+    the verb "Using" (`"... binary data only. Conditional Selection Rate
+    for your polytomous data instead."` -> `"... binary data only. Using
+    Conditional Selection Rate for your polytomous data instead."`), now
+    matching the parallel messages in `CCRR.ordinal`/`CCRR.rated`/`CCRR.binary`.
+  - `R/09_LDLRA.R` and `R/10_LDB.R`: max-parents warning had a comma
+    where a period belongs (`"... is N, Please check."` -> `"... is N.
+    Please check."`).
+
+- **`plot.exametrika()` Biclustering panel: typo "Clusterd" -> "Clustered".**
+  Fixed a long-standing misspelling in the base-R Biclustering array plot
+  (`R/00_plot_biclustering.R`): the panel title `"Clusterd Data"` is now
+  `"Clustered Data"`, the inline comment `## Clusterd Plot` is corrected to
+  `## Clustered Plot`, and the internal variable `clusterd_data` is renamed
+  to `clustered_data`. No user-facing API change. The downstream
+  `ggExametrika::plotArray_gg()` had inherited and propagated the typo into
+  its argument names (`Clusterd`, `Clusterd_lines`, `Clusterd_lines_color`);
+  that is being corrected in ggExametrika 1.1.1 as a coordinated release.
+
+- **Binary IRM: crash on real data with missing values.** `Biclustering_IRM`
+  on a binary `exametrika` data object containing missing cells
+  (`tmp$Z[s, j] == 0`) crashed with *"確率ベクトル中にNAがあります"*
+  (NA in probability vector) inside `rmultinom()`, after `log()` produced
+  `NaN` in the Gibbs sampler. The cause was that `tmp$U` retains the
+  `-1` missingness marker from `dataFormat()` and the IRM aggregated it
+  directly (`tmp$U %*% fld01`), producing negative counts in `CcfPlus`
+  whose log was `NaN`. The pre-existing line `U <- tmp$U * tmp$Z` was a
+  dead variable. `R/07_IRM.R` now assigns the masked matrix back as
+  `tmp$U <- tmp$U * tmp$Z`, so all downstream `tmp$U` references see
+  zero in missing cells. Reproduced on HCI (651×20, 1.5% missing) and
+  SAT12 (600×32 binarised, 0.4% missing).
+
+- **Graphical Lasso: graceful handling of numerical divergence.** When the
+  inner block coordinate descent (BCD) of `Glasso()` produced non-finite
+  values — typically with high-dimensional, near-singular polychoric
+  correlation matrices (`N <= p` regime) and very small lambdas — the
+  previous implementation crashed in R's `if (diff < eps)` test with
+  *"missing value where TRUE/FALSE needed"*, discarding all of the
+  intermediate work along the lambda grid.
+
+  - `glasso_one()` now detects non-finite values in the BCD update of
+    `beta`, in the inner convergence statistic `diff`, and in the working
+    covariance `W`, and returns `converged = FALSE` instead of crashing.
+  - `Glasso()` now reacts to `converged = FALSE` (or a non-finite EBIC)
+    by emitting a `warning()` that names the offending lambda and the
+    best lambda found so far, and **breaks the lambda search**, returning
+    the best solution encountered up to that point. If divergence happens
+    on the very first lambda the call still errors out, since no solution
+    exists to return.
+  - The `path` element of the result preserves `NA` for any lambda values
+    skipped by the early break, making the breakpoint visible to the user.
+
+  Observed concretely on a 98-item / 143-respondent ordinal dataset
+  (polychoric condition number ~1.4e5): the old `Glasso()` crashed at
+  lambda = 0.0096 after ~25 minutes of work; the new implementation
+  returns the same `lambda_opt = 0.1003` solution with a clear warning
+  and a `path` whose two trailing entries are `NA`.
+
 # exametrika 1.13.1
 
 Resubmission of the 1.13.0 release. The 1.13.0 submission was rejected
