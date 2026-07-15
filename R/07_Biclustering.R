@@ -10,6 +10,51 @@ softmax <- function(x) {
   return(exp(x) / sum(exp(x)))
 }
 
+#' @title Build a field/rank confirmatory membership matrix
+#' @description
+#' Shared parser for the `conf` argument used by Biclustering()/
+#' Biclustering.nominal()/Biclustering.ordinal()/LDB() for confirmatory
+#' (test-equating) analysis. Accepts either a vector of per-item field
+#' assignments (converted to a 0/1 membership matrix) or an already-built
+#' 0/1 membership matrix/data.frame (validated and coerced to a plain
+#' matrix). Any other input, including `NULL`, is treated as an error;
+#' callers for which `conf = NULL` is a valid "exploratory" mode must
+#' check `is.null(conf)` themselves before calling this.
+#' @param conf A vector or matrix/data.frame describing field/rank
+#' membership; see the `conf` parameter of [Biclustering].
+#' @param nitems Number of items, used to validate `conf`'s size.
+#' @return A 0/1 membership matrix (items x fields)
+#' @noRd
+build_conf_mat <- function(conf, nitems) {
+  if (is.vector(conf)) {
+    # check size
+    if (length(conf) != nitems) {
+      stop("conf vector size does NOT match with data.")
+    }
+    conf_mat <- matrix(0, nrow = nitems, ncol = max(conf))
+    for (i in 1:NROW(conf_mat)) {
+      conf_mat[i, conf[i]] <- 1
+    }
+  } else if (is.matrix(conf) | is.data.frame(conf)) {
+    if (NROW(conf) != nitems) {
+      stop("conf matrix size does NOT match with data.")
+    }
+    # coerce before validating: `%in%` on a data.frame compares whole
+    # columns, so a valid 0/1 data.frame would be rejected otherwise
+    conf <- as.matrix(conf)
+    if (any(!conf %in% c(0, 1))) {
+      stop("The conf matrix should only contain 0s and 1s.")
+    }
+    if (any(rowSums(conf) > 1)) {
+      stop("The row sums of the conf matrix must be equal to 1.")
+    }
+    conf_mat <- as.matrix(conf)
+  } else {
+    stop("conf matrix is not set properly.")
+  }
+  conf_mat
+}
+
 #' @title Biclustering and Ranklustering Analysis
 #' @description
 #' Performs biclustering, ranklustering, or their confirmatory variants on binary response data.
@@ -132,7 +177,7 @@ Biclustering.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' @param mic Logical; if TRUE, forces Field Reference Profiles to be monotonically
 #' increasing. Default is FALSE.
 #' @param maxiter Maximum number of EM algorithm iterations. Default is 100.
-#' @param verbose Logical; if TRUE, displays progress during estimation. Default is TRUE.
+#' @param verbose Logical; if TRUE, displays progress during estimation. Default is FALSE.
 #' @param beta1 Beta distribution parameter 1 for prior density of field reference matrix. Default is 1.
 #' @param beta2 Beta distribution parameter 2 for prior density of field reference matrix. Default is 1.
 #' @param ... Additional arguments passed to specific methods.
@@ -171,7 +216,7 @@ Biclustering.binary <- function(U,
                                 conf_class = NULL,
                                 mic = FALSE,
                                 maxiter = 100,
-                                verbose = TRUE,
+                                verbose = FALSE,
                                 beta1 = 1,
                                 beta2 = 1, ...) {
   tmp <- U
@@ -205,30 +250,7 @@ Biclustering.binary <- function(U,
     if (verbose) {
       message("Confirmatory Clustering is chosen.")
     }
-    if (is.vector(conf)) {
-      # check size
-      if (length(conf) != NCOL(tmp$U)) {
-        stop("conf vector size does NOT match with data.")
-      }
-      conf_mat <- matrix(0, nrow = NCOL(tmp$U), ncol = max(conf))
-      for (i in 1:NROW(conf_mat)) {
-        conf_mat[i, conf[i]] <- 1
-      }
-    } else if (is.matrix(conf) | is.data.frame(conf)) {
-      if (NROW(conf) != NCOL(tmp$U)) {
-        stop("conf matrix size does NOT match with data.")
-      }
-      if (any(!conf %in% c(0, 1))) {
-        stop("The conf matrix should only contain 0s and 1s.")
-      }
-      if (any(rowSums(conf) > 1)) {
-        stop("The row sums of the conf matrix must be equal to 1.")
-      }
-      conf_mat <- as.matrix(conf)
-    } else {
-      stop("conf matrix is not set properly.")
-    }
-    ###
+    conf_mat <- build_conf_mat(conf, NCOL(tmp$U))
     nfld <- NCOL(conf_mat)
   } else {
     conf_mat <- NULL
@@ -412,7 +434,7 @@ Biclustering.binary <- function(U,
     if (verbose) {
       message(
         sprintf(
-          "\r%-80s",
+          "\n%-80s",
           paste0(
             "iter ", emt, " log_lik ", format(test_log_lik, digits = 6)
           )
@@ -501,7 +523,7 @@ Biclustering.binary <- function(U,
   FitIndices <- TestFit(tmp$U, tmp$Z, test_log_lik, nparam)
 
   ### Field Analysis
-  crr <- crr(tmp$Z * tmp$U)
+  crr <- crr(tmp)
   fieldAnalysis <- as.data.frame(fldmemb)
   fieldAnalysis <- cbind(crr, fld, fieldAnalysis)
   colnames(fieldAnalysis) <- c("CRR", "LFE", paste0("Field", 1:nfld))

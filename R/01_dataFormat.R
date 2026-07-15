@@ -3,9 +3,11 @@
 #' This function serves the role of formatting the data prior to the analysis.
 #' @param data is a data matrix of the type matrix or data.frame.
 #' @param na na argument specifies the numbers or characters to be treated as missing values.
-#' @param id id indicates the column number containing the examinee ID.
+#' @param id id indicates the column containing the examinee ID, specified either
+#' as a column number or as a column name (character string).
 #' If NULL (default), the first column is auto-detected as ID or response data.
-#' If a column number is specified, that column is always used as the ID column.
+#' If a column number or column name is specified, that column is always used
+#' as the ID column.
 #' @param Z Z is a missing indicator matrix of the type matrix or data.frame
 #' @param w w is item weight vector
 #' @param response.type Character string specifying the type of response data:
@@ -111,12 +113,28 @@ dataFormat <- function(data, na = NULL, id = NULL, Z = NULL, w = NULL,
 
   # Phase 1: ID column identification and response matrix extraction
   if (!is.null(id)) {
-    # Explicit ID column specified
-    if (!is.numeric(id) || length(id) != 1) {
+    # Explicit ID column specified, either by column number or column name
+    if (length(id) != 1 || (!is.numeric(id) && !is.character(id))) {
       stop(
-        "id must be a single integer specifying the column number (e.g., id = 1). ",
-        "To pass ID labels, use a data.frame with an ID column instead."
+        "id must be a single integer specifying the column number, or a single ",
+        "character string specifying the column name (e.g., id = 1 or id = \"StudentID\")."
       )
+    }
+    if (is.character(id)) {
+      id_matches <- which(colnames(data) == id)
+      if (length(id_matches) == 0) {
+        stop(
+          "Column name '", id, "' not found in data. Available columns: ",
+          paste(colnames(data), collapse = ", ")
+        )
+      }
+      if (length(id_matches) > 1) {
+        stop(
+          "Column name '", id, "' matches multiple columns (",
+          paste(id_matches, collapse = ", "), "). Use a column number to disambiguate."
+        )
+      }
+      id <- id_matches
     }
     if (id > ncol(data)) {
       stop("ID column number exceeds the number of columns in data")
@@ -281,8 +299,10 @@ dataFormat <- function(data, na = NULL, id = NULL, Z = NULL, w = NULL,
     if (!all(response.matrix[response.matrix != -1] %in% c(0, 1))) {
       stop("For binary response type, data matrix can only contain the values 0, 1, NA, and the specified missing value")
     }
-  } else if (response.type == "polytgomous") {
-    # Check if all non-missing values are non-negative integers
+  } else if (response.type %in% c("ordinal", "rated")) {
+    # Check if all non-missing values are non-negative integers. Nominal
+    # category codes are arbitrary labels (not ordered counts), so this
+    # check intentionally does not apply to response.type == "nominal".
     if (!all(response.matrix[response.matrix != -1] == floor(response.matrix[response.matrix != -1])) || any(response.matrix[response.matrix != -1] < 0)) {
       stop("For polytomous response type, data matrix must contain only non-negative integers, NA, and the specified missing value")
     }
@@ -303,27 +323,21 @@ dataFormat <- function(data, na = NULL, id = NULL, Z = NULL, w = NULL,
     w <- rep(1, NCOL(response.matrix))
   }
 
-  # check sd for each items
-  sd.check <- apply(response.matrix, 2, function(x) sd(x, na.rm = TRUE))
-  if (sum(is.na(sd.check)) != 0) {
-    excluded_items <- ItemLabel[is.na(sd.check)]
-    message(
-      "The following items with no variance.Excluded from the data:\n",
-      paste(excluded_items, collapse = ", "), "\n"
-    )
-    response.matrix <- response.matrix[, !is.na(sd.check), drop = FALSE]
-    Z <- Z[, !is.na(sd.check), drop = FALSE]
-    ItemLabel <- ItemLabel[!is.na(sd.check)]
-    w <- w[!is.na(sd.check)]
-
-    # Check if all items were excluded
-    if (ncol(response.matrix) == 0) {
-      stop("All items have no variance and were excluded. No valid response data remains.")
+  # Check variance for each item using only its valid (Z == 1) responses.
+  # Computing sd() on the raw matrix would count the -1 missing sentinel as
+  # data, which masks items that are constant among the students who
+  # actually responded (e.g. an item only 12 students took, all of whom
+  # answered correctly) whenever other students left it unanswered.
+  n_valid <- colSums(Z)
+  sd.check <- vapply(seq_len(ncol(response.matrix)), function(j) {
+    if (n_valid[j] == 0) {
+      return(NA_real_)
     }
-  }
+    sd(response.matrix[Z[, j] == 1, j])
+  }, numeric(1))
 
-  # Warn about items with all missing values
-  all_missing_cols <- which(apply(response.matrix, 2, function(x) all(x == -1)))
+  # Warn about items with all missing values (kept in the data, not excluded)
+  all_missing_cols <- which(n_valid == 0)
   if (length(all_missing_cols) > 0) {
     message(
       "Warning: The following items have all missing values: ",
@@ -331,15 +345,32 @@ dataFormat <- function(data, na = NULL, id = NULL, Z = NULL, w = NULL,
     )
   }
 
-  # Warn about items with zero variance (constant values, excluding all-missing)
-  zero_var_cols <- which(!is.na(sd.check[seq_len(ncol(response.matrix))]) &
-    sd.check[seq_len(ncol(response.matrix))] == 0)
-  zero_var_cols <- setdiff(zero_var_cols, all_missing_cols)
-  if (length(zero_var_cols) > 0) {
+  # Items with no variance among their valid responses (a constant response,
+  # or too few/anomalous valid responses to compute variance) are excluded
+  # before analysis, matching the original Mathematica implementation's
+  # dataformat[], which drops items where every respondent answered the
+  # same way. All-missing items are handled separately above and are not
+  # excluded here.
+  no_variance_cols <- setdiff(which(is.na(sd.check) | sd.check == 0), all_missing_cols)
+  if (length(no_variance_cols) > 0) {
+    excluded_items <- ItemLabel[no_variance_cols]
     message(
-      "Warning: The following items have zero variance (constant values): ",
-      paste(ItemLabel[zero_var_cols], collapse = ", ")
+      "The following items have no variance among valid responses (constant, or too few valid responses to compute variance). Excluded from the data:\n",
+      paste(excluded_items, collapse = ", "), "\n"
     )
+    keep <- setdiff(seq_len(ncol(response.matrix)), no_variance_cols)
+    response.matrix <- response.matrix[, keep, drop = FALSE]
+    Z <- Z[, keep, drop = FALSE]
+    ItemLabel <- ItemLabel[keep]
+    w <- w[keep]
+    if (!is.null(CA)) {
+      CA <- CA[keep]
+    }
+
+    # Check if all items were excluded
+    if (ncol(response.matrix) == 0) {
+      stop("All items have no variance and were excluded. No valid response data remains.")
+    }
   }
 
   # Warn about students with all missing responses
@@ -426,10 +457,14 @@ dataFormat <- function(data, na = NULL, id = NULL, Z = NULL, w = NULL,
 #' the response. Additionally, it can include a column for the weight of
 #' the items.
 #' @param na na argument specifies the numbers or characters to be treated as missing values.
-#' @param Sid Specify the column number containing the student ID label vector.
-#' @param Qid Specify the column number containing the Question label vector.
-#' @param Resp Specify the column number containing the Response value vector.
-#' @param w Specify the column number containing the weight vector.
+#' @param Sid Specify the column containing the student ID label vector, either
+#' as a column number or as a column name (character string).
+#' @param Qid Specify the column containing the Question label vector, either
+#' as a column number or as a column name (character string).
+#' @param Resp Specify the column containing the Response value vector, either
+#' as a column number or as a column name (character string).
+#' @param w Specify the column containing the weight vector, either
+#' as a column number or as a column name (character string).
 #' @param response.type Character string specifying the type of response data:
 #'   "binary" for dichotomous data,
 #'   "ordinal" for ordered polytomous data,
@@ -475,13 +510,52 @@ longdataFormat <- function(data, na = NULL,
     stop("Data must be matrix or data.frame")
   }
   if (is.null(Sid)) {
-    stop("Column number for identifier for Student must be specified.")
+    stop("Column number or column name for identifier for Student must be specified.")
   }
   if (is.null(Qid)) {
-    stop("Column number for identifier for Questions must be specified.")
+    stop("Column number or column name for identifier for Questions must be specified.")
   }
   if (is.null(Resp)) {
-    stop("Column number for response pattern must be specified.")
+    stop("Column number or column name for response pattern must be specified.")
+  }
+
+  # Resolve a column specification (number or name) to a column number
+  resolve_col <- function(col, arg_name) {
+    if (length(col) != 1 || (!is.numeric(col) && !is.character(col))) {
+      stop(
+        arg_name, " must be a single column number or a single column name ",
+        "(e.g., ", arg_name, " = 1 or ", arg_name, " = \"", arg_name, "\")."
+      )
+    }
+    if (is.character(col)) {
+      matches <- which(colnames(data) == col)
+      if (length(matches) == 0) {
+        stop(
+          "Column name '", col, "' specified for ", arg_name,
+          " not found in data. Available columns: ",
+          paste(colnames(data), collapse = ", ")
+        )
+      }
+      if (length(matches) > 1) {
+        stop(
+          "Column name '", col, "' specified for ", arg_name,
+          " matches multiple columns (", paste(matches, collapse = ", "),
+          "). Use a column number to disambiguate."
+        )
+      }
+      return(matches)
+    }
+    if (col < 1 || col > ncol(data)) {
+      stop(arg_name, " column number exceeds the number of columns in data")
+    }
+    as.integer(col)
+  }
+
+  Sid <- resolve_col(Sid, "Sid")
+  Qid <- resolve_col(Qid, "Qid")
+  Resp <- resolve_col(Resp, "Resp")
+  if (!is.null(w)) {
+    w <- resolve_col(w, "w")
   }
 
   # Extract vectors based on data type
@@ -495,28 +569,36 @@ longdataFormat <- function(data, na = NULL,
     Resp_vec <- data[, Resp]
   }
 
-  # Process Student IDs
+  # Process Student IDs. Always remap through as.factor() to obtain a dense,
+  # 1-based, correctly-ordered index, even when the raw IDs are already
+  # numeric (e.g. student IDs 101, 102, ...): using the raw numeric values
+  # directly as row indices would leave gaps whenever the IDs are not an
+  # exact 1..N sequence, silently misaligning ID/Sid_label with the rows of
+  # the response matrix built below.
+  Sid_fac <- as.factor(Sid_vec)
+  Sid_num <- as.integer(Sid_fac)
   if (!is.numeric(Sid_vec)) {
-    Sid_vec <- as.factor(Sid_vec)
-    Sid_label <- unique(levels(Sid_vec))
-    Sid_num <- as.numeric(Sid_vec)
+    Sid_label <- levels(Sid_fac)
   } else {
-    Sid_num <- Sid_vec
-    Sid_label <- unique(paste0("Student", Sid_num))
-  }
-  if (any(duplicated(Sid_vec))) {
-    duplicated_ids <- Sid_vec[duplicated(Sid_vec)]
-    stop(paste("Duplicated IDs found:", paste(unique(duplicated_ids), collapse = ",")))
+    Sid_label <- paste0("Student", levels(Sid_fac))
   }
 
-  # Process Question IDs
+  # Process Question IDs (same dense-remapping rationale as Sid above).
+  Qid_fac <- as.factor(Qid_vec)
+  Qid_num <- as.integer(Qid_fac)
   if (!is.numeric(Qid_vec)) {
-    Qid_vec <- as.factor(Qid_vec)
-    Qid_label <- unique(levels(Qid_vec))
-    Qid_num <- as.numeric(Qid_vec)
+    Qid_label <- levels(Qid_fac)
   } else {
-    Qid_num <- Qid_vec
-    Qid_label <- unique(paste0("Q", Qid_vec))
+    Qid_label <- paste0("Q", levels(Qid_fac))
+  }
+
+  # Check for duplicate (student, item) pairs. In long format, a student
+  # legitimately appears on multiple rows (one per item), so duplication must
+  # be checked on the (Sid, Qid) pair, not on Sid alone.
+  pair_key <- paste(Sid_num, Qid_num, sep = "_")
+  if (any(duplicated(pair_key))) {
+    dup_pairs <- unique(pair_key[duplicated(pair_key)])
+    stop(paste("Duplicated (student, item) pairs found:", paste(dup_pairs, collapse = ", ")))
   }
 
   # Process Response vector and determine response type if not specified
@@ -595,7 +677,11 @@ longdataFormat <- function(data, na = NULL,
     } else {
       w_vec <- data[, w]
     }
-    w <- w_vec[unique(Qid_num)]
+    # w_vec is indexed by long-format row number, not by item index; look up
+    # each item's weight via the row where it first appears, in item-index
+    # order (1..max(Qid_num)), rather than misusing unique(Qid_num) (an item
+    # ID, not a row number) as a row index into w_vec.
+    w <- w_vec[match(seq_len(max(Qid_num)), Qid_num)]
   }
 
   # Calculate categories for each item

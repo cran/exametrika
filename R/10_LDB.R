@@ -19,7 +19,7 @@
 #' @param adj_list A list compiling matrix-type adjacency matrices for each rank/class.
 #' @param adj_file A file detailing the relationships of the graph for each rank/class,
 #' listed in the order of starting point, ending point, and rank(class).
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
 #' @param beta1 Beta distribution parameter 1 for prior density. Default is 1.
 #' @param beta2 Beta distribution parameter 2 for prior density. Default is 1.
 #' @return
@@ -123,7 +123,7 @@
 #' }
 #' @export
 
-LDB <- function(U, Z = NULL, w = NULL, na = NULL,
+LDB <- function(U, na = NULL, Z = NULL, w = NULL,
                 ncls = 2, method = "R",
                 conf = NULL,
                 g_list = NULL, adj_list = NULL, adj_file = NULL,
@@ -135,8 +135,8 @@ LDB <- function(U, Z = NULL, w = NULL, na = NULL,
     tmp <- U
   }
 
-  if (U$response.type != "binary") {
-    response_type_error(U$response.type, "LDB")
+  if (tmp$response.type != "binary") {
+    response_type_error(tmp$response.type, "LDB")
   }
 
   U <- tmp$U * tmp$Z
@@ -151,26 +151,7 @@ LDB <- function(U, Z = NULL, w = NULL, na = NULL,
 
 
   # Check the conf
-  if (is.vector(conf)) {
-    # check size
-    if (length(conf) != NCOL(U)) {
-      stop("conf vector size does NOT match with data.")
-    }
-    conf_mat <- matrix(0, nrow = NCOL(U), ncol = max(conf))
-    for (i in 1:NROW(conf_mat)) {
-      conf_mat[i, conf[i]] <- 1
-    }
-  } else if (is.matrix(conf) | is.data.frame(conf)) {
-    if (NROW(conf) != NCOL(U)) {
-      stop("conf matrix size does NOT match with data.")
-    }
-    if (any(!conf %in% c(0, 1))) {
-      stop("The conf matrix should only contain 0s and 1s.")
-    }
-    if (any(rowSums(conf) > 1)) {
-      stop("The row sums of the conf matrix must be equal to 1.")
-    }
-  }
+  conf_mat <- build_conf_mat(conf, NCOL(U))
 
   nfld <- NCOL(conf_mat)
 
@@ -300,7 +281,14 @@ LDB <- function(U, Z = NULL, w = NULL, na = NULL,
   denom0 <- sign(denom_npirp)
 
   denom_npirp <- denom_npirp + (1 - denom0) * 100
-  param <- (n_pirp + beta2 - 1) / denom_npirp
+  # Numerator uses beta1 (the "success"/correct-response prior pseudo-count),
+  # matching the convention already used by BNM/LD_param_est(LDLRA)/BINET's
+  # analogous posterior-mode formula. The original Mathematica Chapter 10
+  # module (develop/mtmk15forVer13/mod/Module_LDB.nb) uses beta2 here, but at
+  # the package default beta1 = beta2 = 1 this is numerically identical; it
+  # only differs once a caller sets beta1 != beta2, where beta1-as-numerator
+  # is the mathematically consistent choice.
+  param <- (n_pirp + beta1 - 1) / denom_npirp
 
   ### IRP
   pirp_trans <- aperm(pirp_array, perm = c(2, 3, 4, 1))
@@ -398,7 +386,7 @@ LDB <- function(U, Z = NULL, w = NULL, na = NULL,
     n_field = nfld,
     Nrank = ncls,
     Nfield = nfld,
-    crr = crr(U),
+    crr = crr(tmp),
     ItemLabel = tmp$ItemLabel,
     FieldLabel = FieldLabel,
     adj_list = adj_list,

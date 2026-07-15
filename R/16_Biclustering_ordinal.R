@@ -15,7 +15,7 @@
 #' @param mic Logical; if TRUE, forces Field Reference Profiles to be monotonically
 #' increasing. Default is FALSE.
 #' @param maxiter Maximum number of EM algorithm iterations. Default is 100.
-#' @param verbose Logical; if TRUE, displays progress during estimation. Default is TRUE.
+#' @param verbose Logical; if TRUE, displays progress during estimation. Default is FALSE.
 #' @param alpha Dirichlet distribution concentration parameter for prior density of field reference probabilities. Default is 1.
 #' @param ... Additional arguments passed to specific methods.
 #' @export
@@ -26,19 +26,19 @@ Biclustering.ordinal <- function(U,
                                  conf_class = NULL,
                                  mic = FALSE,
                                  maxiter = 100,
-                                 verbose = TRUE,
+                                 verbose = FALSE,
                                  alpha = 1, ...) {
   tmp <- U
-  maxQ <- max(tmp$Q)
+  tmp$Q <- remap_category_codes(tmp$Q)
   nobs <- NROW(tmp$Q)
   nitems <- NCOL(tmp$Q)
-  ncat <- tmp$categories
   const <- exp(-nitems)
   test_log_lik <- -1 / const
   old_test_log_lik <- -2 / const
   emt <- 0
   maxemt <- maxiter
   ncat <- as.vector(tmp$categories)
+  maxQ <- max(ncat)
   # if (length(unique(ncat)) > 1) {
   #   stop("Error: Variables have different numbers of categories. Nominal data processing requires the same number of categories for all variables.")
   # }
@@ -67,30 +67,7 @@ Biclustering.ordinal <- function(U,
     if (verbose) {
       message("Confirmatory Clustering is chosen.")
     }
-    if (is.vector(conf)) {
-      # check size
-      if (length(conf) != NCOL(U$Q)) {
-        stop("conf vector size does NOT match with data.")
-      }
-      conf_mat <- matrix(0, nrow = NCOL(U$Q), ncol = max(conf))
-      for (i in 1:NROW(conf_mat)) {
-        conf_mat[i, conf[i]] <- 1
-      }
-    } else if (is.matrix(conf) | is.data.frame(conf)) {
-      if (NROW(conf) != NCOL(U$Q)) {
-        stop("conf matrix size does NOT match with data.")
-      }
-      if (any(!conf %in% c(0, 1))) {
-        stop("The conf matrix should only contain 0s and 1s.")
-      }
-      if (any(rowSums(conf) > 1)) {
-        stop("The row sums of the conf matrix must be equal to 1.")
-      }
-      conf_mat <- as.matrix(conf)
-    } else {
-      stop("conf matrix is not set properly.")
-    }
-    ###
+    conf_mat <- build_conf_mat(conf, NCOL(U$Q))
     nfld <- NCOL(conf_mat)
   } else {
     conf_mat <- NULL
@@ -155,7 +132,7 @@ Biclustering.ordinal <- function(U,
     }
   }
 
-  # Bicluter Boundary Reference Matrix(FxCxQ+1)
+  # Bicluster Boundary Reference Matrix(FxCxQ+1)
   BBRM <- array(NA, dim = c(nfld, ncls, maxQ + 1))
   BBRM[, , 1] <- 1
   BBRM[, , maxQ + 1] <- 0
@@ -308,7 +285,7 @@ Biclustering.ordinal <- function(U,
     if (verbose) {
       message(
         sprintf(
-          "\r%-80s",
+          "\n%-80s",
           paste0(
             "iter ", emt, " log_lik ", format(test_log_lik, digits = 6)
           )

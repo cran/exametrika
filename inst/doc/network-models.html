@@ -372,9 +372,9 @@ format. A Directed Acyclic Graph (DAG) must be provided via
 <span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co"># Graph object</span></span>
 <span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>g <span class="ot">&lt;-</span> igraph<span class="sc">::</span><span class="fu">graph_from_data_frame</span>(DAG)</span>
 <span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>g</span>
-<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; IGRAPH 79b285d DN-- 5 5 -- </span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; IGRAPH 9d6623f DN-- 5 5 -- </span></span>
 <span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt; + attr: name (v/c)</span></span>
-<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt; + edges from 79b285d (vertex names):</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt; + edges from 9d6623f (vertex names):</span></span>
 <span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt; [1] Item01-&gt;Item02 Item02-&gt;Item03 Item02-&gt;Item04 Item03-&gt;Item05 Item04-&gt;Item05</span></span>
 <span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a></span>
 <span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co"># Adjacency matrix</span></span>
@@ -412,17 +412,17 @@ format. A Directed Acyclic Graph (DAG) must be provided via
 #&gt; 
 #&gt; Conditional Correct Response Rate
 #&gt;    Child Item N of Parents   Parent Items       PIRP Conditional CRR
-#&gt; 1      Item01            0     No Parents No Pattern       0.6000000
-#&gt; 2      Item02            1         Item01          0       0.2500000
-#&gt; 3      Item02            1         Item01          1       0.5000000
-#&gt; 4      Item03            1         Item02          0       0.8333333
-#&gt; 5      Item03            1         Item02          1       1.0000000
-#&gt; 6      Item04            1         Item02          0       0.1666667
-#&gt; 7      Item04            1         Item02          1       0.5000000
-#&gt; 8      Item05            2 Item03, Item04         00       0.0000000
-#&gt; 9      Item05            2 Item03, Item04         01        NaN(0/0)
-#&gt; 10     Item05            2 Item03, Item04         10       0.3333333
-#&gt; 11     Item05            2 Item03, Item04         11       0.6666667
+#&gt; 1      Item01            0     No Parents No Pattern           0.600
+#&gt; 2      Item02            1         Item01          0           0.250
+#&gt; 3      Item02            1         Item01          1           0.500
+#&gt; 4      Item03            1         Item02          0           0.833
+#&gt; 5      Item03            1         Item02          1           1.000
+#&gt; 6      Item04            1         Item02          0           0.167
+#&gt; 7      Item04            1         Item02          1           0.500
+#&gt; 8      Item05            2 Item03, Item04         00           0.000
+#&gt; 9      Item05            2 Item03, Item04         01              NA
+#&gt; 10     Item05            2 Item03, Item04         10           0.333
+#&gt; 11     Item05            2 Item03, Item04         11           0.667
 #&gt; 
 #&gt; Model Fit Indices
 #&gt;                  value

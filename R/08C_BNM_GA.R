@@ -27,7 +27,7 @@
 #' the next generation.
 #' @param filename Specify the filename when saving the generated adjacency matrix in CSV format.
 #' The default is null, and no output is written to the file.
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
 #' @importFrom igraph as_adjacency_matrix
 #' @importFrom igraph graph_from_adjacency_matrix
 #' @importFrom igraph as_data_frame
@@ -63,20 +63,19 @@
 #' }
 #' @export
 
-BNM_GA <- function(U, Z = NULL, w = NULL, na = NULL,
+BNM_GA <- function(U, na = NULL, Z = NULL, w = NULL,
                    seed = 123,
                    population = 20, Rs = 0.5, Rm = 0.005,
                    maxParents = 2, maxGeneration = 100,
                    successiveLimit = 5, crossover = 0,
                    elitism = 0, filename = NULL,
-                   verbose = TRUE) {
+                   verbose = FALSE) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
-  U <- tmp$U * tmp$Z
   testlength <- NCOL(tmp$U)
   nobs <- NROW(tmp$U)
 
@@ -88,18 +87,13 @@ BNM_GA <- function(U, Z = NULL, w = NULL, na = NULL,
   set.seed(seed)
   crr <- crr(tmp)
   sort_list <- order(crr, decreasing = TRUE)
-  adj_sort <- data.frame(item = tmp$ItemLabel, crr = crr)
-  adj <- matrix(0, ncol = testlength, nrow = testlength)
-  adj[upper.tri(adj)] <- 1
-  colnames(adj) <- rownames(adj) <- tmp$ItemLabel[sort_list]
-  gene_length <- sum(upper.tri(adj))
-
 
   # Initialize ------------------------------------------------------
   RsI <- round(population * Rs)
 
   adj <- matrix(0, ncol = testlength, nrow = testlength)
   colnames(adj) <- rownames(adj) <- tmp$ItemLabel[sort_list]
+  gene_length <- sum(upper.tri(adj))
   gene_list <- matrix(0, nrow = population, ncol = gene_length)
   for (j in 1:population) {
     adj_gene <- rbinom(gene_length, 1, 0.5)
@@ -124,7 +118,7 @@ BNM_GA <- function(U, Z = NULL, w = NULL, na = NULL,
     generation <- generation + 1
     if (verbose) {
       message(
-        "\rgen. ", generation, " best BIC ", format(bestfit, digits = 6),
+        "\ngen. ", generation, " best BIC ", format(bestfit, digits = 6),
         " limit count ", limit_count,
         appendLF = FALSE
       )
@@ -271,7 +265,7 @@ BNM_GA <- function(U, Z = NULL, w = NULL, na = NULL,
 #' generational gene of the last generation. The default is 1.
 #' @param filename Specify the filename when saving the generated adjacency matrix in CSV format.
 #' The default is null, and no output is written to the file.
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
 #' @importFrom igraph as_adjacency_matrix
 #' @importFrom igraph graph_from_adjacency_matrix
 #' @importFrom igraph as_data_frame
@@ -308,21 +302,20 @@ BNM_GA <- function(U, Z = NULL, w = NULL, na = NULL,
 #' }
 #' @export
 
-BNM_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
+BNM_PBIL <- function(U, na = NULL, Z = NULL, w = NULL,
                      seed = 123,
                      population = 20, Rs = 0.5, Rm = 0.002,
                      maxParents = 2, maxGeneration = 100,
                      successiveLimit = 5, elitism = 0,
                      alpha = 0.05, estimate = 1,
                      filename = NULL,
-                     verbose = TRUE) {
+                     verbose = FALSE) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
-  U <- tmp$U * tmp$Z
   testlength <- NCOL(tmp$U)
   nobs <- NROW(tmp$U)
 
@@ -353,9 +346,7 @@ BNM_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
   set.seed(seed)
   crr <- crr(tmp)
   sort_list <- order(crr, decreasing = TRUE)
-  adj_sort <- data.frame(item = tmp$ItemLabel, crr = crr)
   adj <- matrix(0, ncol = testlength, nrow = testlength)
-  adj[upper.tri(adj)] <- 1
   colnames(adj) <- rownames(adj) <- tmp$ItemLabel[sort_list]
   gene_length <- sum(upper.tri(adj))
 
@@ -379,7 +370,7 @@ BNM_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
     if (verbose) {
       message(
         sprintf(
-          "\r%-80s",
+          "\n%-80s",
           paste0(
             "gen. ", generation, " best BIC ", format(bestfit, digits = 6),
             " limit count ", limit_count

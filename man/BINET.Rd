@@ -6,27 +6,29 @@
 \usage{
 BINET(
   U,
+  na = NULL,
   Z = NULL,
   w = NULL,
-  na = NULL,
   conf = NULL,
   ncls = NULL,
   nfld = NULL,
   g_list = NULL,
   adj_list = NULL,
   adj_file = NULL,
-  verbose = FALSE
+  verbose = FALSE,
+  beta1 = 1,
+  beta2 = 1
 )
 }
 \arguments{
 \item{U}{U is either a data class of exametrika, or raw data. When raw data is given,
 it is converted to the exametrika class with the \link{dataFormat} function.}
 
+\item{na}{na argument specifies the numbers or characters to be treated as missing values.}
+
 \item{Z}{Z is a missing indicator matrix of the type matrix or data.frame}
 
 \item{w}{w is item weight vector}
-
-\item{na}{na argument specifies the numbers or characters to be treated as missing values.}
 
 \item{conf}{For the confirmatory parameter, you can input either a vector with
 items and corresponding fields in sequence, or a field membership profile
@@ -45,7 +47,15 @@ The number of fields(nfld) will be overwrite to the number of columns of this ma
 \item{adj_file}{A file detailing the relationships of the graph for each rank/class,
 listed in the order of starting point, ending point, and rank(class).}
 
-\item{verbose}{verbose output Flag. default is TRUE}
+\item{verbose}{verbose output Flag. default is FALSE}
+
+\item{beta1}{Beta distribution parameter 1 for prior density of the conditional
+correct response rates. Default is 1. Increase this (together with \code{beta2}) if
+estimation fails because some class-by-field cell has zero non-missing
+observations (common with many classes/fields combined with missing data).}
+
+\item{beta2}{Beta distribution parameter 2 for prior density of the conditional
+correct response rates. Default is 1.}
 }
 \value{
 \describe{

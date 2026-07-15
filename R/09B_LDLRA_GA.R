@@ -34,9 +34,11 @@
 #' generational gene of the last generation. The default is 1.
 #' @param filename Specify the filename when saving the generated adjacency matrix in CSV format.
 #' The default is null, and no output is written to the file.
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
 #' @param beta1 Beta distribution parameter 1 for prior density. Default is 2.
 #' @param beta2 Beta distribution parameter 2 for prior density. Default is 2.
+#' Unlike the other network models (which default to 1), the default of 2
+#' follows the original Mathematica implementation of LDLRA.
 #' @return
 #' \describe{
 #'  \item{nobs}{Sample size. The number of rows in the dataset.}
@@ -65,13 +67,14 @@
 #' \donttest{
 #' # Perform Structure Learning for LDLRA using PBIL algorithm
 #' # This process may take considerable time due to evolutionary optimization
-#' result.LDLRA.PBIL <- LDLRA_PBIL(J35S515,
+#' result.LDLRA.PBIL <- LDLRA_PBIL(J15S500,
 #'   seed = 123, # Set random seed for reproducibility
-#'   ncls = 5, # Number of latent ranks
-#'   maxGeneration = 10,
+#'   ncls = 3, # Number of latent ranks
+#'   population = 10, # Candidate solutions evaluated per generation
+#'   maxGeneration = 5,
 #'   method = "R", # Use rank model (vs. class model)
 #'   elitism = 1, # Keep best solution in each generation
-#'   successiveLimit = 15 # Convergence criterion
+#'   successiveLimit = 5 # Convergence criterion
 #' )
 #'
 #' # Examine the learned network structure
@@ -87,21 +90,20 @@
 #' @export
 #'
 
-LDLRA_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
+LDLRA_PBIL <- function(U, na = NULL, Z = NULL, w = NULL,
                        seed = 123, ncls = 2, method = "R",
                        population = 20, Rs = 0.5, Rm = 0.002,
                        maxParents = 2, maxGeneration = 100,
                        successiveLimit = 5, elitism = 0,
                        alpha = 0.05, estimate = 1,
                        filename = NULL,
-                       verbose = TRUE, beta1 = 2, beta2 = 2) {
+                       verbose = FALSE, beta1 = 2, beta2 = 2) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
   } else {
     tmp <- U
   }
-  U <- tmp$U * tmp$Z
   testlength <- NCOL(tmp$U)
   nobs <- NROW(tmp$U)
 
@@ -144,9 +146,7 @@ LDLRA_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
   set.seed(seed)
   crr <- crr(tmp)
   sort_list <- order(crr, decreasing = TRUE)
-  adj_sort <- data.frame(item = tmp$ItemLabel, crr = crr)
   adj <- matrix(0, ncol = testlength, nrow = testlength)
-  adj[upper.tri(adj)] <- 1
   colnames(adj) <- rownames(adj) <- tmp$ItemLabel[sort_list]
   gene_length <- sum(upper.tri(adj))
 
@@ -222,7 +222,7 @@ LDLRA_PBIL <- function(U, Z = NULL, w = NULL, na = NULL,
         if (verbose) {
           message(
             sprintf(
-              "\r%-80s",
+              "\n%-80s",
               paste0(
                 "Gen ", generation, " ID.", i,
                 " BIC ", format(round(ret.LDparam$FitIndices$BIC, 3), nsmall = 3),

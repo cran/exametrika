@@ -133,7 +133,7 @@ PSD_item_params <- function(model, Lambda, quadrature, marginal_posttheta) {
 #' @param Z Z is a missing indicator matrix of the type matrix or data.frame
 #' @param w w is item weight vector
 #' @param na na argument specifies the numbers or characters to be treated as missing values.
-#' @param verbose logical; if TRUE, shows progress of iterations (default: TRUE)
+#' @param verbose logical; if TRUE, shows progress of iterations (default: FALSE)
 #' @importFrom stats optim
 #' @details
 #' Apply the 2, 3, and 4 parameter logistic models to estimate the item and subject populations.
@@ -179,7 +179,7 @@ PSD_item_params <- function(model, Lambda, quadrature, marginal_posttheta) {
 #' @export
 #'
 
-IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
+IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = FALSE) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
@@ -187,14 +187,16 @@ IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
     tmp <- U
   }
 
-  if (U$response.type != "binary") {
-    response_type_error(U$response.type, "IRT")
+  if (tmp$response.type != "binary") {
+    response_type_error(tmp$response.type, "IRT")
   }
 
-  U <- tmp$U * tmp$Z
+  # Compute on the formatted exametrika object (not a bare matrix) so that
+  # missingness (tmp$Z) is honored instead of silently treated as incorrect.
+  rho <- exametrika::ItemTotalCorr(tmp)
+  tau <- exametrika::ItemThreshold(tmp)
 
-  rho <- exametrika::ItemTotalCorr(U)
-  tau <- exametrika::ItemThreshold(U)
+  U <- tmp$U * tmp$Z
 
   # initialize
   testlength <- NCOL(U)
@@ -322,7 +324,7 @@ IRT <- function(U, model = 2, na = NULL, Z = NULL, w = NULL, verbose = TRUE) {
     if (verbose) {
       message(
         sprintf(
-          "\r%-80s",
+          "\n%-80s",
           paste0(
             "iter ", emt, " LogLik ", format(totalLogLike, digits = 6)
           )

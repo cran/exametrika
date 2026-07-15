@@ -1,6 +1,7 @@
 #' @rdname Biclustering_IRM
 #' @param mic Logical; if TRUE, forces Field Reference Profiles to be monotonically
-#' increasing across classes (ordinal IRM only). Default is TRUE.
+#' increasing across classes (ordinal IRM only). Default is FALSE, matching
+#' \code{LRA} and \code{Biclustering} for ordinal data.
 #' @return
 #' For ordinal data, the returned list includes:
 #' \describe{
@@ -38,11 +39,13 @@
 #' @export
 Biclustering_IRM.ordinal <- function(U,
                                      gamma_c = 1, gamma_f = 1, alpha = 1,
-                                     mic = TRUE,
-                                     max_iter = 100, stable_limit = 5,
-                                     minSize = 20, EM_limit = 100,
-                                     seed = 123, verbose = TRUE, ...) {
+                                     mic = FALSE,
+                                     maxiter = 100, stable_limit = 5,
+                                     minSize = 20, EM_limit = 20,
+                                     seed = 123, verbose = FALSE, ...) {
+  maxiter <- resolve_deprecated_max_iter(maxiter, list(...))
   tmp <- U
+  tmp$Q <- remap_category_codes(tmp$Q)
 
   nitems <- NCOL(tmp$Q)
   nobs <- NROW(tmp$Q)
@@ -54,21 +57,27 @@ Biclustering_IRM.ordinal <- function(U,
     stop("alpha must be positive (alpha > 0)")
   }
 
-  # One-hot encoding of response matrix: Uq[s, j, q] = 1 if student s chose category q on item j
+  # One-hot encoding of response matrix: Uq[s, j, q] = 1 if student s chose
+  # category q on item j. Missing cells (tmp$Z == 0) are left at zero; a raw
+  # -1 sentinel written directly as an array index would otherwise corrupt
+  # the array via R's negative-index semantics.
   Uq <- array(0, dim = c(nobs, nitems, maxQ))
-  for (s in 1:nobs) {
-    for (j in 1:nitems) {
-      Uq[s, j, tmp$Q[s, j]] <- 1
-    }
-  }
+  valid <- as.vector(tmp$Z) == 1
+  Uq[cbind(
+    rep(seq_len(nobs), times = nitems)[valid],
+    rep(seq_len(nitems), each = nobs)[valid],
+    as.vector(tmp$Q)[valid]
+  )] <- 1
 
   # Initialize -------------------------------------------------------------
   if (!is.null(seed)) {
     set.seed(seed)
   }
 
-  ## Initial Class: assign by mean response score
-  means <- apply(tmp$Q, 1, mean)
+  ## Initial Class: assign by mean response score (missing cells excluded)
+  Q_masked <- tmp$Q
+  Q_masked[tmp$Z == 0] <- NA
+  means <- apply(Q_masked, 1, mean, na.rm = TRUE)
   unique_vec <- unique(sort(means))
   ncls <- length(unique_vec)
   cls01 <- matrix(0, ncol = ncls, nrow = nobs)
@@ -89,7 +98,7 @@ Biclustering_IRM.ordinal <- function(U,
   gibbs <- irm_gibbs_core(
     Uq = Uq, Z = tmp$Z, cls01 = cls01, fld01 = fld01,
     gamma_c = gamma_c, gamma_f = gamma_f, alpha_vec = alpha_vec,
-    max_iter = max_iter, stable_limit = stable_limit, verbose = verbose
+    max_iter = maxiter, stable_limit = stable_limit, verbose = verbose
   )
 
   cls01 <- gibbs$cls01

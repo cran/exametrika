@@ -15,7 +15,7 @@
 #' \donttest{
 #' # Fit a Biclustering model with automatic structure learning using IRM
 #' # gamma_c and gamma_f are concentration parameters for the Chinese Restaurant Process
-#' result <- Biclustering_IRM(J35S515, gamma_c = 1, gamma_f = 1, verbose = TRUE)
+#' result <- Biclustering_IRM(J15S500, gamma_c = 1, gamma_f = 1)
 #'
 #' # Display the Bicluster Reference Matrix (BRM) as a heatmap
 #' plot(result, type = "Array")
@@ -28,6 +28,24 @@
 
 Biclustering_IRM <- function(U, ...) {
   UseMethod("Biclustering_IRM")
+}
+
+#' @title Resolve the deprecated max_iter argument
+#' @description
+#' `Biclustering_IRM` methods took `max_iter` until v1.14.0 while the
+#' `Biclustering` methods took `maxiter`. The argument was renamed to
+#' `maxiter` for consistency; a `max_iter` passed through `...` is still
+#' honored with a deprecation warning.
+#' @param maxiter The value of the current `maxiter` argument
+#' @param dots `list(...)` of the calling method
+#' @return The iteration limit to use
+#' @noRd
+resolve_deprecated_max_iter <- function(maxiter, dots) {
+  if (!is.null(dots[["max_iter"]])) {
+    warning("`max_iter` is deprecated; use `maxiter` instead.", call. = FALSE)
+    maxiter <- dots[["max_iter"]]
+  }
+  maxiter
 }
 
 #' @rdname Biclustering_IRM
@@ -59,7 +77,9 @@ Biclustering_IRM.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' @param gamma_f \eqn{\gamma_F} is the hyperparameter of the CRP and represents the
 #' attractiveness of a new Field. The greater this value it more likely to be classified
 #' in the new field. The default is 1.
-#' @param max_iter A maximum iteration number of IRM process. The default is 100.
+#' @param maxiter A maximum iteration number of IRM process. The default is 100.
+#'  (Renamed from \code{max_iter} in v1.15.0; the old name is still accepted
+#'  with a deprecation warning.)
 #' @param stable_limit The IRM process exits the loop when the FRM stabilizes and no longer
 #'  changes significantly. This option sets the maximum number of stable iterations,
 #'  with a default of 5.
@@ -74,7 +94,7 @@ Biclustering_IRM.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' reproducible results. The default is \code{123}, which guarantees deterministic
 #' output. Set to \code{NULL} to disable seed setting and let the results depend
 #' on the current state of the random number generator.
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
 #' @return
 #' \describe{
 #'  \item{nobs}{Sample size. The number of rows in the dataset.}
@@ -103,14 +123,15 @@ Biclustering_IRM.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' }
 #' @examples
 #' \donttest{
-#' result <- Biclustering_IRM(J35S515, gamma_c = 1, gamma_f = 1, verbose = TRUE)
+#' result <- Biclustering_IRM(J15S500, gamma_c = 1, gamma_f = 1)
 #' plot(result, type = "Array")
 #' }
 #' @export
-Biclustering_IRM.binary <- function(U, Z = NULL, w = NULL, na = NULL,
+Biclustering_IRM.binary <- function(U, na = NULL, Z = NULL, w = NULL,
                                     gamma_c = 1, gamma_f = 1,
-                                    max_iter = 100, stable_limit = 5, minSize = 20, EM_limit = 20,
-                                    seed = 123, verbose = TRUE, ...) {
+                                    maxiter = 100, stable_limit = 5, minSize = 20, EM_limit = 20,
+                                    seed = 123, verbose = FALSE, ...) {
+  maxiter <- resolve_deprecated_max_iter(maxiter, list(...))
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
@@ -427,7 +448,7 @@ Biclustering_IRM.binary <- function(U, Z = NULL, w = NULL, na = NULL,
         )
       )
     }
-    if (limit_count == stable_limit || iter == max_iter) {
+    if (limit_count == stable_limit || iter == maxiter) {
       IRM_FLG <- FALSE
     } else {
       iter <- iter + 1
@@ -547,10 +568,10 @@ Biclustering_IRM.binary <- function(U, Z = NULL, w = NULL, na = NULL,
         bestfit <- fit
         best_index <- indices
         bestPcf <- Pcf
-        bestclass <- class
+        bestcls <- cls
       } else {
         Pcf <- bestPcf
-        class <- bestclass
+        cls <- bestcls
         EMrepFLG <- FALSE
         break
       }

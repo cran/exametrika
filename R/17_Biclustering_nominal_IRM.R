@@ -31,10 +31,12 @@
 #' @export
 Biclustering_IRM.nominal <- function(U,
                                      gamma_c = 1, gamma_f = 1, alpha = 1,
-                                     max_iter = 100, stable_limit = 5,
+                                     maxiter = 100, stable_limit = 5,
                                      minSize = 20, EM_limit = 20,
-                                     seed = 123, verbose = TRUE, ...) {
+                                     seed = 123, verbose = FALSE, ...) {
+  maxiter <- resolve_deprecated_max_iter(maxiter, list(...))
   tmp <- U
+  tmp$Q <- remap_category_codes(tmp$Q)
 
   nitems <- NCOL(tmp$Q)
   nobs <- NROW(tmp$Q)
@@ -46,21 +48,27 @@ Biclustering_IRM.nominal <- function(U,
     stop("alpha must be positive (alpha > 0)")
   }
 
-  # One-hot encoding of response matrix: Uq[s, j, q] = 1 if student s chose category q on item j
+  # One-hot encoding of response matrix: Uq[s, j, q] = 1 if student s chose
+  # category q on item j. Missing cells (tmp$Z == 0) are left at zero; a raw
+  # -1 sentinel written directly as an array index would otherwise corrupt
+  # the array via R's negative-index semantics.
   Uq <- array(0, dim = c(nobs, nitems, maxQ))
-  for (s in 1:nobs) {
-    for (j in 1:nitems) {
-      Uq[s, j, tmp$Q[s, j]] <- 1
-    }
-  }
+  valid <- as.vector(tmp$Z) == 1
+  Uq[cbind(
+    rep(seq_len(nobs), times = nitems)[valid],
+    rep(seq_len(nitems), each = nobs)[valid],
+    as.vector(tmp$Q)[valid]
+  )] <- 1
 
   # Initialize -------------------------------------------------------------
   if (!is.null(seed)) {
     set.seed(seed)
   }
 
-  ## Initial Class: assign by mode category
-  mode_cat <- apply(tmp$Q, 1, function(x) {
+  ## Initial Class: assign by mode category (missing cells excluded)
+  Q_masked <- tmp$Q
+  Q_masked[tmp$Z == 0] <- NA
+  mode_cat <- apply(Q_masked, 1, function(x) {
     tab <- table(x)
     as.integer(names(which.max(tab)))
   })
@@ -84,7 +92,7 @@ Biclustering_IRM.nominal <- function(U,
   gibbs <- irm_gibbs_core(
     Uq = Uq, Z = tmp$Z, cls01 = cls01, fld01 = fld01,
     gamma_c = gamma_c, gamma_f = gamma_f, alpha_vec = alpha_vec,
-    max_iter = max_iter, stable_limit = stable_limit, verbose = verbose
+    max_iter = maxiter, stable_limit = stable_limit, verbose = verbose
   )
 
   cls01 <- gibbs$cls01

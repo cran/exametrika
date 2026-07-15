@@ -24,6 +24,30 @@ fill_adj <- function(g, ItemLabel) {
   return(adj)
 }
 
+#' @title Posterior-mode correct-response rate under a Beta(beta1, beta2) prior
+#' @description
+#' Shared formula used by BNM/LD_param_est(LDLRA)/BINET for the conditional
+#' correct-response rate: the posterior mode of a Binomial proportion under a
+#' Beta(beta1, beta2) prior, `(count + beta1 - 1) / (total + beta1 + beta2 - 2)`,
+#' where `beta1` is the prior pseudo-count on the "success"/correct side (the
+#' side that appears in `count`) and `beta2` is the pseudo-count on the
+#' "failure"/incorrect side. `count`/`total` may be scalars, vectors, or
+#' arrays of matching shape.
+#' @param count Number of correct/matching responses
+#' @param total Total number of (non-missing) responses
+#' @param beta1 Beta distribution parameter 1 (prior pseudo-count for `count`)
+#' @param beta2 Beta distribution parameter 2 (prior pseudo-count for the
+#' complement of `count`)
+#' @return Posterior-mode rate, same shape as `count`/`total`. When
+#' `total == 0` and `beta1 + beta2 == 2` the cell is undefined (0/0) and
+#' `NaN` is returned; every caller must handle that case explicitly
+#' (`BNM()` masks such cells via its `denom0` indicator and reports them as
+#' "NaN(0/0)", `LDLRA()` and `BINET()` stop with an informative error).
+#' @noRd
+beta_posterior_mode <- function(count, total, beta1, beta2) {
+  (count + beta1 - 1) / (total + beta1 + beta2 - 2)
+}
+
 #' @title Bayesian Network Model
 #' @description
 #' performs Bayesian Network Model with specified graph structure
@@ -42,7 +66,7 @@ fill_adj <- function(g, ItemLabel) {
 #' @param adj_file specify CSV file where the graph structure is specified.
 #' @param adj_matrix specify adjacency matrix.
 #' @param beta1 Beta distribution parameter 1 (for correct responses). Default is 1.
-#' @param beta2 Beta distribution parameter 2 (for incorrect responses). Default is 1. Note: referred to as beta0 internally.
+#' @param beta2 Beta distribution parameter 2 (for incorrect responses). Default is 1.
 #' @importFrom igraph graph_from_data_frame
 #' @importFrom igraph as_adjacency_matrix
 #' @importFrom utils read.csv
@@ -90,7 +114,7 @@ fill_adj <- function(g, ItemLabel) {
 #'
 #' @export
 
-BNM <- function(U, Z = NULL, w = NULL, na = NULL,
+BNM <- function(U, na = NULL, Z = NULL, w = NULL,
                 g = NULL, adj_file = NULL, adj_matrix = NULL,
                 beta1 = 1, beta2 = 1) {
   # data format
@@ -100,8 +124,8 @@ BNM <- function(U, Z = NULL, w = NULL, na = NULL,
     tmp <- U
   }
 
-  if (U$response.type != "binary") {
-    response_type_error(U$response.type, "BNM")
+  if (tmp$response.type != "binary") {
+    response_type_error(tmp$response.type, "BNM")
   }
 
 
@@ -139,19 +163,16 @@ BNM <- function(U, Z = NULL, w = NULL, na = NULL,
   adjU <- adj + t(adj)
   simpleFLG <- ifelse(max(adjU) <= 1, 1, 0)
   testlength <- ncol(adj)
-  acyclicFLG <- 0
-  connectedFLG <- 0
-  for (i in 1:(testlength - 1)) {
-    acyclicFLG <- acyclicFLG + sum(diag(adj^i))
-    connectedFLG <- connectedFLG + min(sum(adjU^i))
-  }
-  acyclicFLG <- ifelse(acyclicFLG == 0, 1, 0)
-  connectedFLG <- ifelse(connectedFLG > 0, 1, 0)
+  # `adj^i` is R's elementwise power, not matrix power, so it never actually
+  # tests for cycles/paths of length i. Use igraph's own DAG/connectivity
+  # checks on the same adjacency matrix instead.
+  adj_graph <- igraph::graph_from_adjacency_matrix(adj)
+  acyclicFLG <- ifelse(igraph::is_dag(adj_graph), 1, 0)
+  connectedFLG <- ifelse(igraph::is_connected(adj_graph, mode = "weak"), 1, 0)
   dag <- simpleFLG * acyclicFLG
   cdag <- dag * connectedFLG
 
   # Initialize
-  beta0 <- beta2
   npa <- colSums(adj)
 
   pir <- lapply(1:length(npa), function(i) {
@@ -193,10 +214,9 @@ BNM <- function(U, Z = NULL, w = NULL, na = NULL,
     n_PIRP_0[, i] <- colSums(tmp$Z * (1 - tmp$U) * PIRP_array[, , i])
   }
 
-  deno <- n_PIRP_0 + n_PIRP_1 + beta0 + beta1 - 2
   denom0 <- sign(n_PIRP_1 + n_PIRP_0)
 
-  param <- (n_PIRP_1 + beta1 - 1) / deno
+  param <- beta_posterior_mode(n_PIRP_1, n_PIRP_0 + n_PIRP_1, beta1, beta2)
   rownames(param) <- tmp$ItemLabel
   colnames(param) <- paste("PIRP", 1:ncol(param))
 
@@ -245,7 +265,7 @@ BNM <- function(U, Z = NULL, w = NULL, na = NULL,
     U = U,
     testlength = testlength,
     nobs = nobs,
-    crr = crr(U),
+    crr = crr(tmp),
     ItemLabel = tmp$ItemLabel,
     adj = adj,
     g = g,

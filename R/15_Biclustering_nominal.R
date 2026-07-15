@@ -12,7 +12,7 @@
 #'   * A field membership profile matrix (items × fields) with 0/1 values
 #'   * NULL (default) for exploratory analysis where field memberships are estimated
 #' @param maxiter Maximum number of EM algorithm iterations. Default is 100.
-#' @param verbose Logical; if TRUE, displays progress during estimation. Default is TRUE.
+#' @param verbose Logical; if TRUE, displays progress during estimation. Default is FALSE.
 #' @param alpha Dirichlet distribution concentration parameter for prior density of field reference probabilities. Default is 1.
 #' @param ... Additional arguments passed to specific methods.
 #' #'
@@ -29,10 +29,10 @@ Biclustering.nominal <- function(U,
                                  conf_class = NULL,
                                  mic = FALSE,
                                  maxiter = 100,
-                                 verbose = TRUE,
+                                 verbose = FALSE,
                                  alpha = 1, ...) {
   tmp <- U
-  maxQ <- max(tmp$Q)
+  tmp$Q <- remap_category_codes(tmp$Q)
   nobs <- NROW(tmp$Q)
   nitems <- NCOL(tmp$Q)
   const <- exp(-nitems)
@@ -42,6 +42,7 @@ Biclustering.nominal <- function(U,
   maxemt <- maxiter
 
   ncat <- as.vector(tmp$categories)
+  maxQ <- max(ncat)
 
   ## confirmatory
   # set conf_mat for confirmatory clustering
@@ -49,30 +50,7 @@ Biclustering.nominal <- function(U,
     if (verbose) {
       message("Confirmatory Clustering is chosen.")
     }
-    if (is.vector(conf)) {
-      # check size
-      if (length(conf) != NCOL(U$Q)) {
-        stop("conf vector size does NOT match with data.")
-      }
-      conf_mat <- matrix(0, nrow = NCOL(U$Q), ncol = max(conf))
-      for (i in 1:NROW(conf_mat)) {
-        conf_mat[i, conf[i]] <- 1
-      }
-    } else if (is.matrix(conf) | is.data.frame(conf)) {
-      if (NROW(conf) != NCOL(U$Q)) {
-        stop("conf matrix size does NOT match with data.")
-      }
-      if (any(!conf %in% c(0, 1))) {
-        stop("The conf matrix should only contain 0s and 1s.")
-      }
-      if (any(rowSums(conf) > 1)) {
-        stop("The row sums of the conf matrix must be equal to 1.")
-      }
-      conf_mat <- as.matrix(conf)
-    } else {
-      stop("conf matrix is not set properly.")
-    }
-    ###
+    conf_mat <- build_conf_mat(conf, NCOL(U$Q))
     nfld <- NCOL(conf_mat)
   } else {
     conf_mat <- NULL
@@ -222,7 +200,7 @@ Biclustering.nominal <- function(U,
     if (verbose) {
       message(
         sprintf(
-          "\r%-80s",
+          "\n%-80s",
           paste0(
             "iter ", emt, " log_lik ", format(test_log_lik, digits = 6)
           )

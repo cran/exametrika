@@ -22,7 +22,13 @@
 #' @param adj_list A list compiling matrix-type adjacency matrices for each rank/class.
 #' @param adj_file A file detailing the relationships of the graph for each rank/class,
 #' listed in the order of starting point, ending point, and rank(class).
-#' @param verbose verbose output Flag. default is TRUE
+#' @param verbose verbose output Flag. default is FALSE
+#' @param beta1 Beta distribution parameter 1 for prior density of the conditional
+#' correct response rates. Default is 1. Increase this (together with `beta2`) if
+#' estimation fails because some class-by-field cell has zero non-missing
+#' observations (common with many classes/fields combined with missing data).
+#' @param beta2 Beta distribution parameter 2 for prior density of the conditional
+#' correct response rates. Default is 1.
 #' @return
 #' \describe{
 #'  \item{nobs}{Sample size. The number of rows in the dataset.}
@@ -129,10 +135,10 @@
 #' }
 #' @export
 
-BINET <- function(U, Z = NULL, w = NULL, na = NULL,
+BINET <- function(U, na = NULL, Z = NULL, w = NULL,
                   conf = NULL, ncls = NULL, nfld = NULL,
                   g_list = NULL, adj_list = NULL, adj_file = NULL,
-                  verbose = FALSE) {
+                  verbose = FALSE, beta1 = 1, beta2 = 1) {
   # data format
   if (!inherits(U, "exametrika")) {
     tmp <- dataFormat(data = U, na = na, Z = Z, w = w)
@@ -140,8 +146,8 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
     tmp <- U
   }
 
-  if (U$response.type != "binary") {
-    response_type_error(U$response.type, "BINET")
+  if (tmp$response.type != "binary") {
+    response_type_error(tmp$response.type, "BINET")
   }
 
   U <- tmp$U * tmp$Z
@@ -166,10 +172,6 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
     # check size
     if (length(conf) != NCOL(U)) {
       stop("conf vector size does NOT match with data.")
-    }
-    conf_mat <- matrix(0, nrow = NCOL(U), ncol = max(conf))
-    for (i in 1:NROW(conf_mat)) {
-      conf_mat[i, conf[i]] <- 1
     }
   } else if (is.matrix(conf) | is.data.frame(conf)) {
     if (NROW(conf) != NCOL(U)) {
@@ -271,14 +273,14 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
   ### Adj mat check
   adjU <- all_adj + t(all_adj)
   simpleFLG <- ifelse(max(adjU) <= 1, 1, 0)
-  acyclicFLG <- 0
-  connectedFLG <- 0
-  for (i in 1:(nfld - 1)) {
-    acyclicFLG <- acyclicFLG + sum(diag(all_adj^i))
-    connectedFLG <- connectedFLG + min(sum(U^i))
-  }
-  acyclicFLG <- ifelse(acyclicFLG == 0, 1, 0)
-  connectedFLG <- ifelse(connectedFLG > 0, 1, 0)
+  # `all_adj^i` is R's elementwise power, not matrix power, so it never
+  # actually tests for cycles of length i; `U` here was the student response
+  # matrix, not a graph object at all, so it could not test connectivity
+  # either. Use igraph's own DAG/connectivity checks on the class-level
+  # adjacency matrix instead.
+  all_adj_graph <- igraph::graph_from_adjacency_matrix(all_adj)
+  acyclicFLG <- ifelse(igraph::is_dag(all_adj_graph), 1, 0)
+  connectedFLG <- ifelse(igraph::is_connected(all_adj_graph, mode = "weak"), 1, 0)
   dag <- simpleFLG * acyclicFLG
   cdag <- dag * connectedFLG
 
@@ -307,18 +309,17 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
   cls <- ret.Biclustering$ClassEstimated
 
   # Estimation for BINET -------------------------------------------------------
-  gamp <- 1
   const <- 1e-10
   lls <- 0
 
-  irp <- t(t(clsmemb) %*% tmp$U / colSums(clsmemb))
-  Ccj <- t(clsmemb) %*% tmp$U
+  irp <- t(t(clsmemb) %*% (tmp$Z * tmp$U) / colSums(clsmemb))
+  Ccj <- t(clsmemb) %*% (tmp$Z * tmp$U)
   Fcj <- t(clsmemb) %*% (tmp$Z * (1 - tmp$U))
   Ncj <- Ccj + Fcj
   Ccf <- Ccj %*% fldmemb
   Fcf <- Fcj %*% fldmemb
   Ncf <- Ccf + Fcf
-  Pcf <- (Ccf + gamp - 1) / (Ncf + 2 * gamp - 2)
+  Pcf <- beta_posterior_mode(Ccf, Ncf, beta1, beta2)
   Pcf[1, ] <- 0
   Pcf[NROW(Pcf), ] <- 1
   Pcf01 <- matrix(0, ncol = nfld, nrow = ncls)
@@ -341,13 +342,13 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
           fld_item <- which(fldmemb[, k] == 1)
           paC <- Ccj[i, fld_item]
           paN <- Ncj[i, fld_item]
-          pap <- (paC + gamp - 1) / (paN + 2 * gamp - 2)
+          pap <- beta_posterior_mode(paC, paN, beta1, beta2)
           if (i == 1) {
             pap <- rep(0, length(pap))
           }
           chC <- Ccj[j, fld_item]
           chN <- Ncj[j, fld_item]
-          chp <- (chC + gamp - 1) / (chN + 2 * gamp - 2)
+          chp <- beta_posterior_mode(chC, chN, beta1, beta2)
           if (j == ncls) {
             chp <- rep(1, length(chp))
           }
@@ -393,6 +394,17 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
     }
   }
 
+  if (anyNA(Pcj)) {
+    stop(
+      "Estimation failed: some class-by-field cell has zero non-missing ",
+      "observations under the current smoothing (beta1 = ", beta1, ", beta2 = ",
+      beta2, "), producing an undefined conditional correct response rate. ",
+      "This is more likely with many classes/fields (ncls x nfld) combined ",
+      "with missing data. Try increasing beta1/beta2 (e.g. beta1 = 2, ",
+      "beta2 = 2) or reducing ncls/nfld."
+    )
+  }
+
   log_num_Zic <- matrix(NA, nrow = nobs, ncol = ncls)
   log_num_Zic <- tmp$U %*% log(t(Pcj) + const) +
     (tmp$Z * (1 - tmp$U)) %*% log(t(1 - Pcj) + const)
@@ -411,7 +423,7 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
   clsmemb <- num_Zic / rowSums(num_Zic)
   cls <- apply(clsmemb, 1, which.max)
   cls01 <- sign(clsmemb - apply(clsmemb, 1, max)) + 1
-  Ccj <- t(clsmemb) %*% tmp$U
+  Ccj <- t(clsmemb) %*% (tmp$Z * tmp$U)
   Fcj <- t(clsmemb) %*% (tmp$Z * (1 - tmp$U))
   Ncj <- Ccj + Fcj
   llm <- sum(Ccj * log(Pcj + const) + Fcj * log(1 - Pcj + const))
@@ -556,7 +568,7 @@ BINET <- function(U, Z = NULL, w = NULL, na = NULL,
     n_field = nfld,
     Nclass = ncls,
     Nfield = nfld,
-    crr = crr(U),
+    crr = crr(tmp),
     ItemLabel = tmp$ItemLabel,
     FieldLabel = FieldLabel,
     all_adj = all_adj,
