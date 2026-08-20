@@ -15,9 +15,9 @@ LRA(U, ...)
 \method{LRA}{binary}(
   U,
   nrank = 2,
-  method = "GTM",
+  method = "isotonic",
   mic = FALSE,
-  maxiter = 100,
+  maxiter = 1000,
   BIC.check = FALSE,
   seed = NULL,
   verbose = FALSE,
@@ -30,9 +30,11 @@ LRA(U, ...)
 \method{LRA}{ordinal}(
   U,
   nrank = 2,
+  method = "isotonic",
   mic = FALSE,
   maxiter = 100,
   trapezoidal = 0,
+  alpha = 1,
   eps = 1e-04,
   verbose = FALSE,
   ...
@@ -64,11 +66,14 @@ it is converted to the exametrika class with the \code{\link{dataFormat}} functi
 
 \item{nrank}{Number of latent ranks to estimate. Must be between 2 and 20.}
 
-\item{method}{For binary data only. Either "SOM" (Self-Organizing Maps) or "GTM" (Gaussian Topographic Mapping). Default is "GTM".}
+\item{method}{Estimation method. One of "isotonic" (order-restricted MAP;
+rank ordering imposed in the M-step by the Fenchel-dual stochastic-order
+solver, no filter) or "GTM" (Gaussian Topographic Mapping; filter
+smoothing). Default is "isotonic".}
 
 \item{mic}{Logical; if TRUE, forces Item Reference Profiles to be monotonically increasing. Default is FALSE.}
 
-\item{maxiter}{Maximum number of iterations for estimation. Default is 100.}
+\item{maxiter}{Maximum number of iterations for estimation. Default is 1000.}
 
 \item{BIC.check}{For binary data with SOM method only. If TRUE, convergence is checked using BIC values. Default is FALSE.}
 
@@ -88,7 +93,12 @@ Default is NULL (fully exploratory).}
 
 \item{trapezoidal}{Specifies the height of both tails when using a trapezoidal
 prior distribution. Must be less than 1/nrank. The default value is 0, which
-results in a uniform prior distribution.}
+results in a uniform prior distribution. Used by \code{method = "GTM"}.}
+
+\item{alpha}{Dirichlet concentration for the category probabilities, used by
+\code{method = "isotonic"} (the polytomous analogue of the binary
+\code{beta1}/\code{beta2}). \code{alpha = 1} gives the maximum-likelihood
+(flat-prior) estimate. Default is 1.}
 
 \item{eps}{Convergence threshold for parameter updates. Default is 1e-4.}
 
@@ -104,8 +114,8 @@ containing the following common elements:
 \item{msg}{A character string indicating the model type. }
 \item{testlength}{Length of the test (number of items).}
 \item{nobs}{Sample size (number of rows in the dataset).}
-\item{Nrank}{Number of latent ranks specified.}
-\item{N_Cycle}{Number of EM algorithm iterations performed.}
+\item{n_rank}{Number of latent ranks specified.}
+\item{n_cycle}{Number of EM algorithm iterations performed.}
 \item{converge}{Logical value indicating whether the algorithm converged within maxiter iterations}
 \item{TRP}{Test Reference Profile vector showing expected scores at each rank.}
 \item{LRD}{Latent Rank Distribution vector showing the number of examinees at each rank.}

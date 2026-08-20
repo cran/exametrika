@@ -4,7 +4,12 @@ library(exametrika)
 ### Data: J35S500 (ordinal, 35 items, 500 students, 5 categories)
 
 ### Setup - run model once and share across tests
-result_oirm <- Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, seed = 123, verbose = FALSE)
+# Structural claims (dimensions, sums to 1, valid ranges, reproducibility)
+# do not depend on the row count, so the CRAN-side fixture is a 150-row
+# subset. The full-data run survives as a CI-only smoke at the end of
+# this file (two-tier test policy, see CLAUDE.md).
+dat_ord <- head_rows_dat(J35S500, 150)
+result_oirm <- Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, seed = 123, verbose = FALSE)
 
 test_that("Ordinal IRM Basic Execution", {
   # Basic structure checks
@@ -40,7 +45,7 @@ test_that("Ordinal IRM Dimensions Consistency", {
 
   # Check basic dimensions
   expect_equal(nitems, 35)
-  expect_equal(nobs, 500)
+  expect_equal(nobs, 150)
   expect_true(nfld >= 1 && nfld <= nitems)
   expect_true(ncls >= 2)
 
@@ -235,10 +240,18 @@ test_that("Ordinal IRM Test Fit Indices", {
 
 test_that("Ordinal IRM Backward Compatibility", {
   # Deprecated field names should still work
-  expect_equal(result_oirm$Nclass, result_oirm$n_class)
-  expect_equal(result_oirm$Nfield, result_oirm$n_field)
-  expect_equal(result_oirm$N_Cycle, result_oirm$n_cycle)
-  expect_equal(result_oirm$LogLik, result_oirm$log_lik)
+  # 2.0.0 で削除: $Nclass はもう無く，$n_class だけが残る
+  expect_null(result_oirm$Nclass)
+  expect_false(is.null(result_oirm$n_class))
+  # 2.0.0 で削除: $Nfield はもう無く，$n_field だけが残る
+  expect_null(result_oirm$Nfield)
+  expect_false(is.null(result_oirm$n_field))
+  # 2.0.0 で削除: $N_Cycle はもう無く，$n_cycle だけが残る
+  expect_null(result_oirm$N_Cycle)
+  expect_false(is.null(result_oirm$n_cycle))
+  # 2.0.0 で削除: $LogLik はもう無く，$log_lik だけが残る
+  expect_null(result_oirm$LogLik)
+  expect_false(is.null(result_oirm$log_lik))
 
   # LRD should equal LCD (alias)
   expect_equal(result_oirm$LRD, result_oirm$LCD)
@@ -248,9 +261,11 @@ test_that("Ordinal IRM Backward Compatibility", {
 })
 
 test_that("Ordinal IRM Seed Reproducibility", {
+  # A reproducibility check: it re-fits the same model to compare runs, which is the expensive shape and the one CRAN gains least from. Runs locally, and under devtools::check(cran = TRUE).
+  skip_on_cran()
   # Same seed should produce identical results
-  result_a <- Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, seed = 42, verbose = FALSE)
-  result_b <- Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, seed = 42, verbose = FALSE)
+  result_a <- Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, seed = 42, verbose = FALSE)
+  result_b <- Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, seed = 42, verbose = FALSE)
 
   expect_equal(result_a$n_class, result_b$n_class)
   expect_equal(result_a$n_field, result_b$n_field)
@@ -267,7 +282,9 @@ test_that("Ordinal IRM Seed Reproducibility", {
 })
 
 test_that("Ordinal IRM Seed NULL Does Not Set Seed", {
-  result_null <- Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, seed = NULL, verbose = FALSE)
+  # A reproducibility check: it re-fits the same model to compare runs, which is the expensive shape and the one CRAN gains least from. Runs locally, and under devtools::check(cran = TRUE).
+  skip_on_cran()
+  result_null <- Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, seed = NULL, verbose = FALSE)
   expect_s3_class(result_null, "exametrika")
   expect_true("ordinalBiclustering" %in% class(result_null))
   expect_true(!is.null(result_null$n_class))
@@ -289,18 +306,18 @@ test_that("Ordinal IRM S3 Dispatch Works", {
 test_that("Ordinal IRM Alpha Parameter Validation", {
   # alpha must be positive
   expect_error(
-    Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, alpha = 0, seed = 123, verbose = FALSE),
+    Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, alpha = 0, seed = 123, verbose = FALSE),
     "alpha must be positive"
   )
   expect_error(
-    Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, alpha = -1, seed = 123, verbose = FALSE),
+    Biclustering_IRM(dat_ord, gamma_c = 1, gamma_f = 1, alpha = -1, seed = 123, verbose = FALSE),
     "alpha must be positive"
   )
 })
 
 test_that("Ordinal IRM Q and Z Matrices Stored Correctly", {
-  expect_equal(dim(result_oirm$Q), c(500, 35))
-  expect_equal(dim(result_oirm$Z), c(500, 35))
+  expect_equal(dim(result_oirm$Q), c(150, 35))
+  expect_equal(dim(result_oirm$Z), c(150, 35))
 
   # Z values should be 0 or 1
   expect_true(all(result_oirm$Z %in% c(0, 1)))
@@ -330,7 +347,7 @@ test_that("Ordinal IRM Students Matrix Structure", {
 
 test_that("Ordinal IRM mic=FALSE Works", {
   # Running with mic=FALSE should still produce valid results
-  result_nomic <- Biclustering_IRM(J35S500,
+  result_nomic <- Biclustering_IRM(dat_ord,
     gamma_c = 1, gamma_f = 1,
     mic = FALSE, seed = 123, verbose = FALSE
   )
@@ -349,4 +366,15 @@ test_that("Ordinal IRM mic=FALSE Works", {
       expect_equal(sum(result_nomic$FRP[f, c, ]), 1.0, tolerance = 1e-10)
     }
   }
+})
+
+### CI-only: full-data smoke ------------------------------------------------
+
+test_that("ordinal IRM full-data run keeps its structure (CI only)", {
+  skip_on_cran()
+  full <- Biclustering_IRM(J35S500, gamma_c = 1, gamma_f = 1, seed = 123, verbose = FALSE)
+  expect_s3_class(full, "exametrika")
+  expect_true(all(abs(rowSums(full$ClassMembership) - 1) < 1e-8))
+  expect_true(all(abs(rowSums(full$FieldMembership) - 1) < 1e-8))
+  expect_true(all(full$FRP >= 0 & full$FRP <= 1))
 })

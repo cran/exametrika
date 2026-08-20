@@ -23,8 +23,8 @@
 #'  \item{msg}{A character string indicating the model type. }
 #'  \item{testlength}{Length of the test (number of items).}
 #'  \item{nobs}{Sample size (number of rows in the dataset).}
-#'  \item{Nrank}{Number of latent ranks specified.}
-#'  \item{N_Cycle}{Number of EM algorithm iterations performed.}
+#'  \item{n_rank}{Number of latent ranks specified.}
+#'  \item{n_cycle}{Number of EM algorithm iterations performed.}
 #'  \item{converge}{Logical value indicating whether the algorithm converged within maxiter iterations}
 #'  \item{TRP}{Test Reference Profile vector showing expected scores at each rank.}
 #'  \item{LRD}{Latent Rank Distribution vector showing the number of examinees at each rank.}
@@ -57,6 +57,24 @@ LRA.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
       return(LRA.ordinal(U, ...))
     } else if (U$response.type == "rated") {
       return(LRA.rated(U, ...))
+    } else if (U$response.type == "nominal") {
+      # A rank ordering has to come from somewhere: in LRA it comes from the
+      # categories being ordered (higher ranks favour higher categories).
+      # Nominal categories give it nothing to attach to, so the model is not
+      # defined here -- hand the data to its unordered counterpart instead of
+      # stopping.
+      message(
+        "Latent ranks require ordered categories, so they are not defined for ",
+        "nominal data; analysing it with LCA() instead."
+      )
+      # nrank is the LRA spelling of the same argument; carry it over rather
+      # than letting it disappear into ... and silently leaving ncls at 2.
+      args <- list(...)
+      if (!is.null(args$nrank)) {
+        args$ncls <- args$nrank
+        args$nrank <- NULL
+      }
+      return(do.call(LCA.nominal, c(list(U), args)))
     } else {
       response_type_error(U$response.type, "LRA")
     }
@@ -72,9 +90,12 @@ LRA.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' or Gaussian Topographic Mapping (GTM).
 #'
 #' @param nrank Number of latent ranks to estimate. Must be between 2 and 20.
-#' @param method For binary data only. Either "SOM" (Self-Organizing Maps) or "GTM" (Gaussian Topographic Mapping). Default is "GTM".
+#' @param method For binary data only. One of "isotonic" (order-restricted EM;
+#'   rank ordering imposed by weighted PAVA in the M-step, no filter),
+#'   "GTM" (Gaussian Topographic Mapping; filter smoothing), or
+#'   "SOM" (Self-Organizing Maps). Default is "isotonic".
 #' @param mic Logical; if TRUE, forces Item Reference Profiles to be monotonically increasing. Default is FALSE.
-#' @param maxiter Maximum number of iterations for estimation. Default is 100.
+#' @param maxiter Maximum number of iterations for estimation. Default is 1000.
 #' @param BIC.check For binary data with SOM method only. If TRUE, convergence is checked using BIC values. Default is FALSE.
 #' @param seed For binary data with SOM method only. Random seed for reproducibility.
 #' @param verbose Logical; if TRUE, displays detailed progress during estimation. Default is FALSE.
@@ -114,9 +135,9 @@ LRA.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' @export
 LRA.binary <- function(U,
                        nrank = 2,
-                       method = "GTM",
+                       method = "isotonic",
                        mic = FALSE,
-                       maxiter = 100,
+                       maxiter = 1000,
                        BIC.check = FALSE,
                        seed = NULL,
                        verbose = FALSE,
@@ -129,8 +150,8 @@ LRA.binary <- function(U,
   const <- exp(-testlength)
   ncls <- nrank
 
-  if (method != "SOM" & method != "GTM") {
-    stop("The method must be selected as either SOM or GTM.")
+  if (method != "SOM" & method != "GTM" & method != "isotonic") {
+    stop("The method must be selected as one of SOM, GTM, or isotonic.")
   }
 
   if (ncls < 2 | ncls > 20) {
@@ -148,13 +169,19 @@ LRA.binary <- function(U,
       BIC.check = BIC.check, seed = seed, verbose = verbose,
       conf = conf
     )
+  } else if (method == "isotonic") {
+    fit <- emclus_isotonic(tmp$U, tmp$Z,
+      ncls = ncls,
+      beta1, beta2, maxiter = maxiter, mic = mic, verbose = verbose,
+      conf = conf
+    )
   } else {
     # GTM.
     Filter <- create_filter_matrix(ncls)
 
     fit <- emclus(tmp$U, tmp$Z,
       ncls = ncls,
-      Fil = Filter, beta1, beta2, mic = mic,
+      Fil = Filter, beta1, beta2, maxiter = maxiter, mic = mic,
       conf = conf
     )
   }
@@ -198,6 +225,9 @@ LRA.binary <- function(U,
   ell_A <- item_log_lik(tmp$U, tmp$Z, fit$postDist, fit$classRefMat)
   if (method == "GTM") {
     nparam <- sum(diag(Filter))
+  } else if (method == "isotonic") {
+    # shape-restricted df: per-item PAVA block count
+    nparam <- fit$item_nparam
   } else {
     nparam <- ncls
   }
@@ -220,10 +250,7 @@ LRA.binary <- function(U,
     IRPIndex = IRPIndex,
     ItemFitIndices = FitIndices$item,
     TestFitIndices = FitIndices$test,
-    log_lik = FitIndices$test$model_log_like,
-    # Deprecated fields (for backward compatibility)
-    Nrank = ncls,
-    N_Cycle = fit$iter
+    log_lik = FitIndices$test$model_log_like
   ), class = c("exametrika", "LRA"))
   return(ret)
 }

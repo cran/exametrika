@@ -14,7 +14,7 @@
 #'   * NULL (default) for exploratory analysis where field memberships are estimated
 #' @param mic Logical; if TRUE, forces Field Reference Profiles to be monotonically
 #' increasing. Default is FALSE.
-#' @param maxiter Maximum number of EM algorithm iterations. Default is 100.
+#' @param maxiter Maximum number of EM algorithm iterations. Default is 1000.
 #' @param verbose Logical; if TRUE, displays progress during estimation. Default is FALSE.
 #' @param alpha Dirichlet distribution concentration parameter for prior density of field reference probabilities. Default is 1.
 #' @param ... Additional arguments passed to specific methods.
@@ -22,10 +22,11 @@
 Biclustering.ordinal <- function(U,
                                  ncls = 2, nfld = 2,
                                  method = "B",
+                                 estimation = "isotonic",
                                  conf = NULL,
                                  conf_class = NULL,
                                  mic = FALSE,
-                                 maxiter = 100,
+                                 maxiter = 1000,
                                  verbose = FALSE,
                                  alpha = 1, ...) {
   tmp <- U
@@ -33,8 +34,12 @@ Biclustering.ordinal <- function(U,
   nobs <- NROW(tmp$Q)
   nitems <- NCOL(tmp$Q)
   const <- exp(-nitems)
-  test_log_lik <- -1 / const
-  old_test_log_lik <- -2 / const
+  # -Inf, not -1/const = -exp(J): the old sentinel sits above the real
+  # log-likelihood on short tests with many respondents, which ended the
+  # loop after one cycle while reporting convergence. The first pass skips
+  # the comparison instead (emt == 0).
+  test_log_lik <- -Inf
+  old_test_log_lik <- -Inf
   emt <- 0
   maxemt <- maxiter
   ncat <- as.vector(tmp$categories)
@@ -56,6 +61,12 @@ Biclustering.ordinal <- function(U,
   } else {
     stop("The method must be selected as either Biclustering or Ranklustering.")
   }
+
+  estimation <- match.arg(estimation, c("isotonic", "GTM"))
+  # The isotonic (stochastic-order) restriction is meaningful only for the
+  # ordered-rank model (Ranklustering); plain Biclustering classes are
+  # unordered, so the estimation argument is ignored there.
+  use_isotonic <- (model == 2) && (estimation == "isotonic")
 
   if (alpha <= 0) {
     stop("alpha must be positive (alpha > 0)")
@@ -173,8 +184,8 @@ Biclustering.ordinal <- function(U,
   converge <- TRUE
   FLG <- TRUE
   while (FLG) {
-    if (!is.finite(test_log_lik) ||
-      test_log_lik - old_test_log_lik < 1e-8 * abs(old_test_log_lik)) {
+    if (emt > 0 && (!is.finite(test_log_lik) ||
+      test_log_lik - old_test_log_lik < 1e-8 * abs(old_test_log_lik))) {
       if (!is.finite(test_log_lik)) converge <- FALSE
       FLG <- FALSE
       break
@@ -193,8 +204,24 @@ Biclustering.ordinal <- function(U,
     # Both E-steps (class and field) use the same values across all q; the old
     # code recomputed this 2*maxQ times per iteration. Using drop=FALSE on
     # array slicing keeps the 3D shape even when nfld == 1.
-    log_delta <- log(BBRM[, , seq_len(maxQ), drop = FALSE] -
-      BBRM[, , seq_len(maxQ) + 1, drop = FALSE] + const)
+    #
+    # The difference of two upper-cumulative probabilities is a category
+    # probability, so it cannot be negative -- except by rounding. The
+    # order-restricted M-step pools adjacent categories, which makes exact ties
+    # common (11 of 30 differences on a 72-item fit), and a tie computed as a
+    # subtraction lands anywhere within a few ulp of zero. `const` cannot absorb
+    # that: it is exp(-nitems), which falls below double precision noise once the
+    # test passes about 37 items (exp(-72) is 5e-32 against errors of 1e-14), so
+    # log() of a negative difference returned NaN, the NaN reached the field
+    # posterior, and every item came back unassigned. Clamping at zero repairs
+    # only the rounding; a difference that is genuinely zero still becomes
+    # log(const), exactly as before, and every value that was already positive is
+    # unchanged to the bit.
+    log_delta <- log(pmax(
+      BBRM[, , seq_len(maxQ), drop = FALSE] -
+        BBRM[, , seq_len(maxQ) + 1, drop = FALSE],
+      0
+    ) + const)
 
     ## Msc <- Pi, Mjf
     tmpL <- matrix(0, nrow = nobs, ncol = ncls)
@@ -202,15 +229,14 @@ Biclustering.ordinal <- function(U,
       log_probs <- matrix(log_delta[, , q], nrow = nfld, ncol = ncls)
       tmpL <- tmpL + ZU[, , q] %*% fldmemb %*% log_probs
     }
-    # Row-wise min via C-level pmin.int instead of apply (one R-level call per row):
-    # do.call(pmin.int, as.data.frame(X)) passes each column as a separate argument,
-    # and pmin.int(col1, col2, ...) returns the element-wise min across columns.
-    minllsr <- do.call(pmin.int, as.data.frame(tmpL))
-    expllsr <- exp(pmin(tmpL - minllsr, 700))
-    clsmemb <- round(expllsr / rowSums(expllsr), 1e8)
+    clsmemb <- row_softmax(tmpL)
 
     if (!is.null(conf_class_mat)) {
       clsmemb <- conf_class_mat
+      smoothed_memb <- clsmemb
+    } else if (use_isotonic) {
+      # No filter smoothing; the rank ordering is imposed in the M-step by the
+      # per-field Fenchel-dual stochastic-order MAP.
       smoothed_memb <- clsmemb
     } else {
       # For Ranklustering
@@ -218,15 +244,21 @@ Biclustering.ordinal <- function(U,
     }
 
     ## Mjf <- Pi, Msc
+    # Use the (filter-)smoothed class membership, matching Biclustering.binary
+    # and LRA.ordinal. For plain Biclustering (model 1) Fil is the identity so
+    # smoothed_memb == clsmemb; for Ranklustering (model 2) this applies the GTM
+    # neighbour smoothing that induces the rank ordering.
     tmpH <- matrix(0, nrow = nitems, ncol = nfld)
     for (q in 1:maxQ) {
       log_probs <- matrix(log_delta[, , q], nrow = nfld, ncol = ncls)
-      tmpH <- tmpH + (t(ZU[, , q]) %*% clsmemb) %*% t(log_probs)
+      tmpH <- tmpH + (t(ZU[, , q]) %*% smoothed_memb) %*% t(log_probs)
     }
 
-    minllsr <- do.call(pmin.int, as.data.frame(tmpH))
-    expllsr <- exp(pmin(tmpH - minllsr, 700)) # 700 is approx upper limit for exp()
-    fldmemb <- round(expllsr / rowSums(expllsr), 1e8)
+    # The field posterior sums over examinees, so its rows spread far wider than
+    # the class posterior's (which sums over items). This is where the old
+    # min-subtraction bit first: from about 700 examinees the exponents passed
+    # the clip and adjacent fields merged.
+    fldmemb <- row_softmax(tmpH)
 
     if (!any(is.null(conf_mat))) {
       fldmemb <- conf_mat
@@ -237,40 +269,64 @@ Biclustering.ordinal <- function(U,
     Ufcq <- array(0, dim = c(nfld, ncls, maxQ))
     cUfcq <- array(0, dim = c(nfld, ncls, maxQ))
     for (q in 1:maxQ) {
-      Ufcq[, , q] <- (t(fldmemb) %*% t(ZU[, , q])) %*% clsmemb
+      Ufcq[, , q] <- (t(fldmemb) %*% t(ZU[, , q])) %*% smoothed_memb
     }
     # Apply Dirichlet prior (alpha parameter)
     Ufcq_prior <- Ufcq + alpha - 1
     Ufcq_prior <- pmax(Ufcq_prior, 1e-10)
-    # Reverse cumulative sum along the 3rd axis:
-    # cUfcq[, , q] = sum over k >= q of Ufcq_prior[, , k].
-    # Equivalent to aperm(apply(., c(1,2), function(x) rev(cumsum(rev(x)))), c(2,3,1))
-    # but vectorized: O(maxQ) array additions instead of nfld*ncls R-level calls.
-    cUfcq <- Ufcq_prior
-    for (q in rev(seq_len(maxQ - 1))) {
-      cUfcq[, , q] <- cUfcq[, , q] + cUfcq[, , q + 1]
-    }
 
-    for (q in 1:maxQ) {
-      BBRM[, , q] <- cUfcq[, , q] / cUfcq[, , 1]
-    }
-
-    ## Forced Ordering
-    if (mic) {
-      overall_order <- array(0, dim = ncls)
-      for (i in 1:ncls) {
-        total_expected <- 0
-        for (j in 1:nfld) {
-          field_expected <- sum(BBRM[j, i, 1:maxQ])
-          total_expected <- total_expected + field_expected
-        }
-        overall_order[i] <- total_expected
+    if (use_isotonic) {
+      # Order-restricted MAP per field: the stochastic-order-restricted
+      # multinomial MAP across ranks (El Barmi & Dykstra 1994), imposing that
+      # each field's upper-cumulative (boundary) probabilities are monotone
+      # non-decreasing across ranks at every threshold. Solved exactly by the
+      # Fenchel-dual coordinate ascent in R/00_isotonic_CORE.R. This replaces
+      # the independent per-cell boundary MLE plus the crude `mic` relabelling.
+      for (f in 1:nfld) {
+        Mcount <- matrix(Ufcq_prior[f, , ], nrow = ncls, ncol = maxQ)
+        # The solver gets its own iteration budget (its default, 100). It used to
+        # inherit the EM's `maxiter`, which coupled two unrelated loops: raising
+        # the EM cap to 1000 for the convergence fix silently raised the inner
+        # solver's cap tenfold as well. It converges well inside 100 here --
+        # the fit is identical for any EM cap from 100 to 1000 -- but the two
+        # budgets have no reason to move together.
+        Pf <- iso_dual_map(Mcount, tol = 1e-6)
+        BCRM[f, , ] <- Pf
+        BBRM[f, , 1] <- 1
+        BBRM[f, , 2:maxQ] <- iso_upper_cum(Pf)
+        BBRM[f, , maxQ + 1] <- 0
       }
-      overall_order <- order(overall_order)
-      BBRM <- BBRM[, overall_order, ]
-    }
-    for (q in 1:maxQ) {
-      BCRM[, , q] <- BBRM[, , q] - BBRM[, , q + 1]
+    } else {
+      # Reverse cumulative sum along the 3rd axis:
+      # cUfcq[, , q] = sum over k >= q of Ufcq_prior[, , k].
+      # Equivalent to aperm(apply(., c(1,2), function(x) rev(cumsum(rev(x)))), c(2,3,1))
+      # but vectorized: O(maxQ) array additions instead of nfld*ncls R-level calls.
+      cUfcq <- Ufcq_prior
+      for (q in rev(seq_len(maxQ - 1))) {
+        cUfcq[, , q] <- cUfcq[, , q] + cUfcq[, , q + 1]
+      }
+
+      for (q in 1:maxQ) {
+        BBRM[, , q] <- cUfcq[, , q] / cUfcq[, , 1]
+      }
+
+      ## Forced Ordering
+      if (mic) {
+        overall_order <- array(0, dim = ncls)
+        for (i in 1:ncls) {
+          total_expected <- 0
+          for (j in 1:nfld) {
+            field_expected <- sum(BBRM[j, i, 1:maxQ])
+            total_expected <- total_expected + field_expected
+          }
+          overall_order[i] <- total_expected
+        }
+        overall_order <- order(overall_order)
+        BBRM <- BBRM[, overall_order, ]
+      }
+      for (q in 1:maxQ) {
+        BCRM[, , q] <- BBRM[, , q] - BBRM[, , q + 1]
+      }
     }
 
     test_log_lik <- 0
@@ -314,7 +370,15 @@ Biclustering.ordinal <- function(U,
     testell <- testell + sum(log(pmax(pred_prob[observed_mask], const)))
   }
 
-  if (model == 2) {
+  if (use_isotonic) {
+    # Shape-restricted df: distinct free boundary levels per field. The first
+    # boundary P(>= 1) = 1 is fixed, so only thresholds 2..maxQ are counted;
+    # rank pooling and adjacent-category ties reduce the count (Meyer &
+    # Woodroofe 2000), matching the ordinal LRA convention.
+    nparam <- sum(sapply(1:nfld, function(f) {
+      length(unique(round(as.vector(BBRM[f, , 2:maxQ, drop = FALSE]), 10)))
+    }))
+  } else if (model == 2) {
     nparam <- sum(diag(Fil)) * nfld * (maxQ - 1)
   } else {
     nparam <- ncls * nfld * (maxQ - 1)
@@ -438,14 +502,12 @@ Biclustering.ordinal <- function(U,
     msg = msg,
     model = model,
     mic = mic,
+    estimation = if (model == 2) estimation else NA_character_,
     converge = converge,
     nobs = nobs,
     n_class = ncls,
     n_field = nfld,
     n_cycle = emt,
-    Nclass = ncls,
-    Nfield = nfld,
-    N_Cycle = emt,
     LFD = flddist,
     LRD = clsdist,
     LCD = clsdist,
@@ -464,9 +526,7 @@ Biclustering.ordinal <- function(U,
     TestFitIndices = FitIndices,
     log_lik = test_log_lik, # New naming convention
     SOACflg = SOACflg,
-    WOACflg = WOACflg,
-    # Deprecated fields (for backward compatibility)
-    LogLik = test_log_lik
+    WOACflg = WOACflg
   ), class = c("exametrika", "ordinalBiclustering"))
 
   return(ret)

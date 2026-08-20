@@ -27,8 +27,8 @@
 #'  \item{nobs}{Sample size. The number of rows in the dataset.}
 #'  \item{testlength}{Length of the test. The number of items included in the test.}
 #'  \item{msg}{A character string indicating the model type. }
-#'  \item{Nclass}{Optimal number of classes.}
-#'  \item{Nfield}{Optimal number of fields.}
+#'  \item{n_class}{Optimal number of classes.}
+#'  \item{n_field}{Optimal number of fields.}
 #'  \item{crr}{Correct Response Rate}
 #'  \item{ItemLabel}{Label of Items}
 #'  \item{FieldLabel}{Label of Fields}
@@ -205,6 +205,13 @@ LDB <- function(U, na = NULL, Z = NULL, w = NULL,
     ncls = ncls,
     nfld = nfld,
     method = "R",
+    # Pinned to GTM: LDB's local-dependence estimates are cross-validated
+    # against the Mathematica (GTM-based) reference. Switching the internal
+    # biclustering init to the isotonic default would change LDB's output and
+    # break that reference (Mathematica has no isotonic implementation). A
+    # deliberate isotonic-LDB variant is left for a future, separately validated
+    # change.
+    estimation = "GTM",
     conf = conf,
     verbose = FALSE
   )
@@ -306,9 +313,9 @@ LDB <- function(U, na = NULL, Z = NULL, w = NULL,
   tmp2 <- nsf_expand2 * tmp2
 
   llsr <- apply(tmp1 + tmp2, c(1, 3), sum)
-  minllsr <- apply(llsr, 1, min)
-  expllsr <- exp(llsr - minllsr)
-  clsmemb <- round(expllsr / rowSums(expllsr), 8)
+  # No clip here, so the old min-subtraction overflowed to Inf outright and the
+  # normalisation returned NaN rather than a merged posterior.
+  clsmemb <- round(row_softmax(llsr), 8)
   cls01 <- sign(clsmemb - apply(clsmemb, 1, max)) + 1
   cls <- apply(clsmemb, 1, which.max)
 
@@ -384,8 +391,6 @@ LDB <- function(U, na = NULL, Z = NULL, w = NULL,
     nobs = nobs,
     n_rank = ncls,
     n_field = nfld,
-    Nrank = ncls,
-    Nfield = nfld,
     crr = crr(tmp),
     ItemLabel = tmp$ItemLabel,
     FieldLabel = FieldLabel,

@@ -120,9 +120,15 @@ on the current state of the random number generator.}
 \item{alpha}{Dirichlet distribution concentration parameter for the prior density of
 field reference probabilities (rated/nominal IRM). Must be positive. The default is 1.}
 
-\item{mic}{Logical; if TRUE, forces Field Reference Profiles to be monotonically
-increasing across classes (ordinal IRM only). Default is FALSE, matching
-\code{LRA} and \code{Biclustering} for ordinal data.}
+\item{mic}{Logical; if TRUE, relabels the classes in ascending order of their
+total expected score, summed over all fields (ordinal IRM only). Default is
+FALSE. Note that this is a cosmetic reordering of class labels: it makes the
+Test Reference Profile monotone (WOAC) but does not impose the per-field
+stochastic order (SOAC), and it leaves the estimates themselves unchanged.
+IRM classes come from a CRP prior and are exchangeable, so there is no rank
+axis for an order restriction to act on; use ordinal Ranklustering
+(\code{Biclustering(method = "R", estimation = "isotonic")}) when a genuine
+order restriction is wanted.}
 }
 \value{
 An object of class "exametrika" containing the IRM results.
@@ -135,8 +141,8 @@ See \code{Biclustering_IRM.binary} or \code{Biclustering_IRM.nominal} for detail
 \item{n_class}{Optimal number of classes (new naming convention).}
 \item{n_field}{Optimal number of fields (new naming convention).}
 \item{em_cycle}{Number of EM algorithm iterations (new naming convention).}
-\item{Nclass}{Optimal number of classes (deprecated, use n_class).}
-\item{Nfield}{Optimal number of fields (deprecated, use n_field).}
+\item{n_class}{Optimal number of classes.}
+\item{n_field}{Optimal number of fields.}
 \item{EM_Cycle}{Number of EM algorithm iterations (deprecated, use em_cycle).}
 \item{BRM}{Bicluster Reference Matrix}
 \item{FRP}{Field Reference Profile}

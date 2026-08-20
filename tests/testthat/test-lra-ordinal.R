@@ -47,13 +47,23 @@ TesFit3 <- read.csv(
 )
 
 
-result <- LRA(J15S3810, mic = TRUE, nrank = 3)
+# Mathematica reference fixtures are for the GTM method; pin method = "GTM"
+# (the default is now "isotonic"). The 12GNT references cannot be shrunk (the
+# data is embedded in the Mathematica notebook), so the full-data fit is
+# CI-only: lazy accessor + skip_on_cran() in each block. CRAN-side coverage of
+# LRA lives in test-tiny-lra.R (Mathematica-verified tiny fixture).
+.gtm <- NULL
+gtm_model <- function() {
+  if (is.null(.gtm)) .gtm <<- LRA(J15S3810, mic = TRUE, nrank = 3, method = "GTM")
+  return(.gtm)
+}
 
 test_that("Test Info", {
+  skip_on_cran()
   expect <- testReport[, 2] |>
     unlist() |>
     as.numeric()
-  actual <- result$ScoreReport |>
+  actual <- gtm_model()$ScoreReport |>
     as.matrix() |>
     unlist() |>
     as.numeric()
@@ -61,8 +71,9 @@ test_that("Test Info", {
 })
 
 test_that("Item Info", {
+  skip_on_cran()
   expect <- itemReport[, -1] |> as.matrix()
-  actual <- result$ItemReport |>
+  actual <- gtm_model()$ItemReport |>
     unclass() |>
     as.data.frame()
   actual <- actual[, names(actual) != "ItemLabel", drop = FALSE]
@@ -73,52 +84,58 @@ test_that("Item Info", {
 })
 
 test_that("CatQuant Ref Mat", {
+  skip_on_cran()
   expect <- catQuant[, 2:5] |> as.matrix()
-  actual <- result$CatQuant[, 3:6] |> as.matrix()
+  actual <- gtm_model()$CatQuant[, 3:6] |> as.matrix()
   rownames(expect) <- rownames(actual) <- NULL
   colnames(expect) <- colnames(actual) <- NULL
   expect_equal(actual, expect, tolerance = 1e-6)
 })
 
 test_that("IC Boundary", {
+  skip_on_cran()
   expect <- cumRatio[, 2:4] |> as.matrix()
-  actual <- result$ICBR[, 3:5] |> as.matrix()
+  actual <- gtm_model()$ICBR[, 3:5] |> as.matrix()
   rownames(expect) <- rownames(actual) <- NULL
   colnames(expect) <- colnames(actual) <- NULL
   expect_equal(actual, expect, tolerance = 1e-4)
 })
 
 test_that("IC Reference Profile", {
+  skip_on_cran()
   expect <- testRefProf[, 2:4] |> as.matrix()
-  actual <- result$ICRP[, 3:5] |> as.matrix()
+  actual <- gtm_model()$ICRP[, 3:5] |> as.matrix()
   rownames(expect) <- rownames(actual) <- NULL
   colnames(expect) <- colnames(actual) <- NULL
   expect_equal(actual, expect, tolerance = 1e-6)
 })
 
 test_that("Test Reference Profile", {
+  skip_on_cran()
   TRP_mat <- TRP_ref[, 2:4] |>
     as.matrix() |>
     unname()
   expect1 <- TRP_mat[1, ] |> as.vector()
   expect2 <- TRP_mat[2, ] |> as.vector()
-  actual1 <- result$TRP |> as.vector()
-  actual2 <- result$LRD |> as.vector()
+  actual1 <- gtm_model()$TRP |> as.vector()
+  actual2 <- gtm_model()$LRD |> as.vector()
   expect_equal(actual1, expect1, tolerance = 1e-6)
   expect_equal(actual2, expect2, tolerance = 1e-6)
 })
 
 test_that("Rank Profile", {
+  skip_on_cran()
   expect <- RankProf[, -1] |> as.matrix()
-  actual <- result$Students[, c(1, 2, 3, 5, 4)] |> as.matrix()
+  actual <- gtm_model()$Students[, c(1, 2, 3, 5, 4)] |> as.matrix()
   rownames(expect) <- rownames(actual) <- NULL
   colnames(expect) <- colnames(actual) <- NULL
   expect_equal(actual, expect, tolerance = 1e-4)
 })
 
 test_that("Score Rank", {
+  skip_on_cran()
   expect <- ScoreRank[, -1] |> as.data.frame()
-  actual <- result$ScoreMembership |>
+  actual <- gtm_model()$ScoreMembership |>
     as.matrix() |>
     as.data.frame()
   actual[1:28, ] <- actual[28:1, ]
@@ -128,10 +145,11 @@ test_that("Score Rank", {
 })
 
 test_that("Item Fit", {
+  skip_on_cran()
   # Expected: TesFit2 columns = Chi-sq, df, NFI, RFI, IFI, TLI, CFI, RMSEA, AIC, CAIC, BIC
   expect <- TesFit2[, -c(1, 4)] |> as.data.frame()
   # Actual: ItemFitIndices after removing log-lik and null fields
-  actual <- result$ItemFitIndices |>
+  actual <- gtm_model()$ItemFitIndices |>
     unclass() |>
     as.data.frame()
   actual <- actual[, -c(1, 2, 3, 5, 7)]
@@ -152,13 +170,14 @@ test_that("Item Fit", {
 })
 
 test_that("Test Fit", {
+  skip_on_cran()
   # Expected: TesFit3 column 3 (RMP-Indices), excluding Chi-p (row 3)
   # = Chi-sq, df, NFI, RFI, IFI, TLI, CFI, RMSEA, AIC, CAIC, BIC (11 values)
   expect <- TesFit3[-3, 3] |> as.numeric()
   # Actual: TestFitIndices (16 fields), removing non-comparable fields
   # Remove: model_log_like(1), bench_log_like(2), null_log_like(3),
   #         null_Chi_sq(5), null_df(7)
-  actual <- result$TestFitIndices |>
+  actual <- gtm_model()$TestFitIndices |>
     unclass() |>
     unlist() |>
     as.numeric()
@@ -171,4 +190,125 @@ test_that("Test Fit", {
   # TODO: Investigate test-level nobs handling for ordinal LRA
   cols_to_test <- 1:7
   expect_equal(actual[cols_to_test], expect[cols_to_test], tolerance = 1e-4)
+})
+
+### Mixed category counts -----------------------------------------------------
+# LRA.ordinal now supports items with differing numbers of categories
+# (ragged sum(ncat) layout). No Mathematica reference exists for the mixed
+# case, so these are structural / internal-consistency checks. The dataset is
+# J15S3810 with category 3 collapsed into 2 on odd-numbered items, giving a
+# 3/4 alternating category-count pattern.
+mixQ <- J15S3810$Q
+for (j in seq(1, ncol(mixQ), by = 2)) {
+  v <- mixQ[, j]
+  v[v == 3] <- 2
+  mixQ[, j] <- v
+}
+Umix <- suppressMessages(dataFormat(mixQ, na = -1))
+ncat_mix <- as.vector(Umix$categories)
+.mix <- NULL
+mix_model <- function() {
+  if (is.null(.mix)) .mix <<- suppressWarnings(LRA(Umix, nrank = 4, mic = TRUE))
+  return(.mix)
+}
+
+test_that("Mixed categories: data really is mixed", {
+  skip_on_cran()
+  # sanity check on the constructed fixture
+  expect_gt(length(unique(ncat_mix)), 1)
+  expect_equal(ncat_mix, rep(c(3, 4), length.out = ncol(mixQ)))
+})
+
+test_that("Mixed categories: does not error and returns LRAordinal", {
+  skip_on_cran()
+  expect_s3_class(mix_model(), "LRAordinal")
+})
+
+test_that("Mixed categories: ICRP/ICBR have ragged row counts", {
+  skip_on_cran()
+  # one ICRP row per category => sum(ncat) rows total
+  expect_equal(nrow(mix_model()$ICRP), sum(ncat_mix))
+  expect_equal(nrow(mix_model()$ICBR), sum(ncat_mix))
+  # per-item row counts follow ncat[j]
+  rowcount <- as.vector(table(factor(
+    mix_model()$ICRP$ItemLabel,
+    levels = unique(mix_model()$ICRP$ItemLabel)
+  )))
+  expect_equal(rowcount, ncat_mix)
+})
+
+test_that("Mixed categories: category probabilities sum to 1 per item/rank", {
+  skip_on_cran()
+  probs <- as.matrix(mix_model()$ICRP[, grep("rank", names(mix_model()$ICRP))])
+  sums <- tapply(
+    seq_len(nrow(mix_model()$ICRP)),
+    mix_model()$ICRP$ItemLabel,
+    function(ix) colSums(probs[ix, , drop = FALSE])
+  )
+  expect_equal(unlist(sums), rep(1, length(unlist(sums))),
+    tolerance = 1e-6, ignore_attr = TRUE
+  )
+})
+
+test_that("Mixed categories: nested log-likelihood ordering holds", {
+  skip_on_cran()
+  tf <- mix_model()$TestFitIndices
+  # null <= model <= saturated(benchmark)
+  expect_lte(tf$null_log_like, tf$model_log_like)
+  expect_lte(tf$model_log_like, tf$bench_log_like)
+  expect_true(is.finite(tf$CFI))
+  expect_true(is.finite(tf$RMSEA))
+})
+
+### Isotonic method (default) -------------------------------------------------
+# No Mathematica reference exists for the order-restricted method; structural
+# checks on the new default path (uniform-category data, J15S3810).
+# Rows are subset to keep this block cheap enough to run on CRAN (the class,
+# metadata and structural claims below do not depend on the row count), so
+# the object keeps its class and its metadata (response.type, categories, CA),
+# and every assertion below is structural -- class, convergence, dimensions,
+# sums, finiteness -- rather than a comparison against reference numbers.
+head_rows <- function(x, n) {
+  x$ID <- x$ID[seq_len(n)]
+  for (f in c("Q", "U", "Z")) {
+    if (!is.null(x[[f]])) x[[f]] <- x[[f]][seq_len(n), , drop = FALSE]
+  }
+  return(x)
+}
+
+result_iso <- LRA(head_rows(J15S3810, 300), nrank = 3)
+
+test_that("isotonic is the default ordinal method", {
+  expect_equal(result_iso$method, "isotonic")
+})
+
+test_that("isotonic ICBR is monotone non-decreasing across ranks", {
+  icbr <- as.matrix(result_iso$ICBR[, grep("rank", names(result_iso$ICBR))])
+  viol <- apply(icbr, 1, function(r) any(diff(r) < -1e-4))
+  expect_false(any(viol))
+})
+
+test_that("isotonic ICRP category probabilities sum to 1 per item/rank", {
+  probs <- as.matrix(result_iso$ICRP[, grep("rank", names(result_iso$ICRP))])
+  sums <- tapply(
+    seq_len(nrow(result_iso$ICRP)), result_iso$ICRP$ItemLabel,
+    function(ix) colSums(probs[ix, , drop = FALSE])
+  )
+  expect_equal(unlist(sums), rep(1, length(unlist(sums))),
+    tolerance = 1e-6, ignore_attr = TRUE
+  )
+})
+
+test_that("isotonic converges and returns finite fit indices", {
+  expect_true(result_iso$converge)
+  expect_true(is.finite(result_iso$TestFitIndices$CFI))
+  expect_true(is.finite(result_iso$TestFitIndices$RMSEA))
+})
+
+test_that("isotonic attains higher model log-likelihood than GTM", {
+  skip_on_cran()
+  expect_gt(
+    result_iso$TestFitIndices$model_log_like,
+    gtm_model()$TestFitIndices$model_log_like
+  )
 })

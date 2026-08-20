@@ -10,6 +10,30 @@ softmax <- function(x) {
   return(exp(x) / sum(exp(x)))
 }
 
+#' @title Row-wise softmax
+#' @description
+#' `softmax()` applied to every row, without an R-level loop. Subtracting the
+#' row maximum is what makes this safe: every exponent is then at most 0, so
+#' `exp()` cannot overflow and the largest entry is exactly 1, which also rules
+#' out a row underflowing to all zeros.
+#'
+#' Subtracting the row *minimum* instead -- as several E-steps used to do --
+#' pushes every exponent positive. The spread of these log-likelihood rows grows
+#' with whatever is being summed over (items for a class posterior, examinees for
+#' a field posterior), so on real data the exponents run into thousands, and
+#' clipping them at `exp(700)` silently collapses every entry above the clip onto
+#' the same value. Two fields differing by a factor of `exp(400)` came out equally
+#' likely (fixed 2026-07-27).
+#'
+#' @param x numeric matrix; rows are normalised independently
+#' @return matrix of the same shape whose rows sum to 1
+#' @noRd
+row_softmax <- function(x) {
+  x_max <- do.call(pmax.int, as.data.frame(x))
+  e <- exp(x - x_max)
+  return(e / rowSums(e))
+}
+
 #' @title Build a field/rank confirmatory membership matrix
 #' @description
 #' Shared parser for the `conf` argument used by Biclustering()/
@@ -72,10 +96,10 @@ build_conf_mat <- function(conf, nitems) {
 #'  \item{mic}{Logical value indicating whether monotonicity constraint was applied}
 #'  \item{testlength}{Number of items in the test}
 #'  \item{nobs}{Number of examinees in the dataset}
-#'  \item{Nclass}{Number of latent classes/ranks specified}
-#'  \item{Nfield}{Number of latent fields specified}
-#'  \item{N_Cycle}{Number of EM iterations performed}
-#'  \item{converge}{Logical value indicating wheter the algorithm converged within maxiter iterasions}
+#'  \item{n_class}{Number of latent classes/ranks specified}
+#'  \item{n_field}{Number of latent fields specified}
+#'  \item{n_cycle}{Number of EM iterations performed}
+#'  \item{converge}{Logical value indicating whether the algorithm converged within maxiter iterations}
 #'  \item{LFD}{Latent Field Distribution - counts of items assigned to each field}
 #'  \item{LRD/LCD}{Latent Rank/Class Distribution - counts of examinees assigned to each class/rank}
 #'  \item{FRP}{Field Reference Profile matrix - probability of correct response for each field-class combination}
@@ -162,6 +186,16 @@ Biclustering.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #' @param method Analysis method to use (character string):
 #'   * "B" or "Biclustering": Standard biclustering (default)
 #'   * "R" or "Ranklustering": Ranklustering with ordered class structure
+#' @param estimation Estimation method for the Field Reference Profiles under
+#'   Ranklustering (`method = "R"`); ignored for plain Biclustering, whose
+#'   classes are unordered:
+#'   * "isotonic": order-restricted estimation, imposing the rank ordering
+#'     directly in the M-step (default). For binary data this is a weighted
+#'     pool-adjacent-violators step, which under the default flat prior is the
+#'     exact order-restricted MLE (Ayer et al. 1955); for ordinal data it is
+#'     the stochastic-order-restricted multinomial MAP solved by the
+#'     Fenchel-dual algorithm (El Barmi & Dykstra 1994).
+#'   * "GTM": the original filter-based smoothing of Shojima (2012).
 #' @param conf Confirmatory parameter for pre-specified field assignments. Can be either:
 #'   * A vector with items and corresponding fields in sequence
 #'   * A field membership profile matrix (items × fields) with 0/1 values
@@ -176,7 +210,7 @@ Biclustering.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 #'   pre-specified labels would defeat the purpose of fixing them.
 #' @param mic Logical; if TRUE, forces Field Reference Profiles to be monotonically
 #' increasing. Default is FALSE.
-#' @param maxiter Maximum number of EM algorithm iterations. Default is 100.
+#' @param maxiter Maximum number of EM algorithm iterations. Default is 1000.
 #' @param verbose Logical; if TRUE, displays progress during estimation. Default is FALSE.
 #' @param beta1 Beta distribution parameter 1 for prior density of field reference matrix. Default is 1.
 #' @param beta2 Beta distribution parameter 2 for prior density of field reference matrix. Default is 1.
@@ -212,10 +246,11 @@ Biclustering.default <- function(U, na = NULL, Z = NULL, w = NULL, ...) {
 Biclustering.binary <- function(U,
                                 ncls = 2, nfld = 2,
                                 method = "B",
+                                estimation = "isotonic",
                                 conf = NULL,
                                 conf_class = NULL,
                                 mic = FALSE,
-                                maxiter = 100,
+                                maxiter = 1000,
                                 verbose = FALSE,
                                 beta1 = 1,
                                 beta2 = 1, ...) {
@@ -244,6 +279,12 @@ Biclustering.binary <- function(U,
   } else {
     stop("The method must be selected as either Biclustering or Ranklustering.")
   }
+
+  estimation <- match.arg(estimation, c("isotonic", "GTM"))
+  # The isotonic (PAVA) order restriction is meaningful only for the
+  # ordered-rank model (Ranklustering); plain Biclustering classes are
+  # unordered, so the estimation argument is ignored there.
+  use_isotonic <- (model == 2) && (estimation == "isotonic")
 
   # set conf_mat for confirmatory clustering
   if (!is.null(conf)) {
@@ -304,10 +345,14 @@ Biclustering.binary <- function(U,
   }
 
   ### Algorithm
-  test_log_lik <- -1 / const
-  old_test_log_lik <- -2 / const
+  # -Inf, not -1/const = -exp(J): the old sentinel sits above the real
+  # log-likelihood on short tests with many respondents, which ended the
+  # loop after one cycle while reporting convergence. The first pass skips
+  # the comparison instead (emt == 0).
+  test_log_lik <- -Inf
+  old_test_log_lik <- -Inf
   emt <- 0
-  maxemt <- 100
+  maxemt <- maxiter
 
   fld0 <- pmin(ceiling(1:testlength / (testlength / nfld)), nfld)
   crr_order <- order(crr(tmp), decreasing = TRUE)
@@ -347,7 +392,7 @@ Biclustering.binary <- function(U,
   FLG <- TRUE
   converge <- TRUE
   while (FLG) {
-    if (test_log_lik - old_test_log_lik < 1e-4 * abs(old_test_log_lik)) {
+    if (emt > 0 && test_log_lik - old_test_log_lik < 1e-8 * abs(old_test_log_lik)) {
       FLG <- FALSE
       break
     }
@@ -376,6 +421,9 @@ Biclustering.binary <- function(U,
 
     if (!is.null(conf_class_mat)) {
       clsmemb <- conf_class_mat
+      smoothed_memb <- clsmemb
+    } else if (use_isotonic) {
+      # No filter smoothing; the rank ordering is imposed in the M-step by PAVA.
       smoothed_memb <- clsmemb
     } else {
       smoothed_memb <- clsmemb %*% Fil
@@ -423,7 +471,16 @@ Biclustering.binary <- function(U,
         PiFR[, ncls] <- 1
       }
     }
-    if (mic) {
+    if (use_isotonic) {
+      # Order restriction: weighted PAVA along the class axis of each field row,
+      # weighted by the per-cell expected counts. This is the exact monotone MLE
+      # under the flat prior (Ayer et al. 1955) and makes the crude `mic` sort
+      # unnecessary.
+      nmat_fr <- cfr + ffr
+      for (f in 1:nfld) {
+        PiFR[f, ] <- pava_up(PiFR[f, ], nmat_fr[f, ])$fitted
+      }
+    } else if (mic) {
       PiFR <- t(apply(PiFR, 1, sort))
     }
     if (any(is.nan(cfr))) {
@@ -519,7 +576,12 @@ Biclustering.binary <- function(U,
   cfr <- t(fldmemb) %*% t(tmp$Z * tmp$U) %*% clsmemb
   ffr <- t(fldmemb) %*% t(tmp$Z * (1 - tmp$U)) %*% clsmemb
   test_log_lik <- sum(cfr * log(PiFR + const) + ffr * log(1 - PiFR + const))
-  nparam <- ifelse(model == 1, ncls * nfld, sum(diag(Fil)) * nfld)
+  if (use_isotonic) {
+    # Shape-restricted df = total number of PAVA blocks across field rows.
+    nparam <- sum(apply(PiFR, 1, function(r) length(unique(round(r, 10)))))
+  } else {
+    nparam <- ifelse(model == 1, ncls * nfld, sum(diag(Fil)) * nfld)
+  }
   FitIndices <- TestFit(tmp$U, tmp$Z, test_log_lik, nparam)
 
   ### Field Analysis
@@ -538,6 +600,7 @@ Biclustering.binary <- function(U,
   ret <- structure(list(
     model = model,
     mic = mic,
+    estimation = if (model == 2) estimation else NA_character_,
     msg = msg,
     converge = converge,
     U = U,
@@ -564,11 +627,7 @@ Biclustering.binary <- function(U,
     TestFitIndices = FitIndices,
     log_lik = test_log_lik,
     SOACflg = SOACflg,
-    WOACflg = WOACflg,
-    # Deprecated fields (for backward compatibility)
-    Nclass = ncls,
-    Nfield = nfld,
-    N_Cycle = emt
+    WOACflg = WOACflg
   ), class = c("exametrika", "Biclustering"))
   return(ret)
 }

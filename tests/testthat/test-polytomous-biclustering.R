@@ -5,7 +5,9 @@ library(exametrika)
 # 理論構造: 累積パターン, 5cls × 5fld × 5cat
 # ================================================================
 
-result_ord <- Biclustering(J35S500, ncls = 5, nfld = 5, method = "R", mic = TRUE, maxiter = 200)
+# Pinned to estimation = "GTM": these structural and fit-index snapshots track
+# the filter-based path. The new isotonic default is exercised separately below.
+result_ord <- Biclustering(J35S500, ncls = 5, nfld = 5, method = "R", estimation = "GTM", mic = TRUE, maxiter = 200)
 
 test_that("ordinal Biclustering converges", {
   expect_true(result_ord$converge)
@@ -60,9 +62,75 @@ test_that("ordinal Biclustering field/class counts", {
 })
 
 test_that("ordinal Biclustering fit indices", {
-  expect_equal(result_ord$TestFitIndices$RMSEA, 0.0533156, tolerance = 1e-3)
-  expect_equal(result_ord$TestFitIndices$AIC, 7287.635, tolerance = 1)
-  expect_equal(result_ord$TestFitIndices$BIC, -66115.85, tolerance = 1)
+  # Values updated when the GTM filter smoothing was wired into the ordinal
+  # Ranklustering M-step (previously the smoothed membership was computed but
+  # never used in estimation). No Mathematica reference exists for ordinal
+  # Biclustering; these are regression snapshots of the fixed GTM path.
+  expect_equal(result_ord$TestFitIndices$RMSEA, 0.0526998, tolerance = 1e-3)
+  expect_equal(result_ord$TestFitIndices$AIC, 6720.284, tolerance = 1)
+  expect_equal(result_ord$TestFitIndices$BIC, -66683.20, tolerance = 1)
+})
+
+
+# ---- Isotonic (Fenchel-dual, stochastic-order) ordinal Ranklustering --------
+
+result_ord_iso <- Biclustering(J35S500,
+  ncls = 5, nfld = 5, method = "R",
+  estimation = "isotonic", maxiter = 200
+)
+
+test_that("isotonic is the default estimation for ordinal Ranklustering", {
+  res <- Biclustering(J35S500, ncls = 5, nfld = 5, method = "R", maxiter = 200)
+  expect_equal(res$estimation, "isotonic")
+})
+
+test_that("estimation is ignored (NA) for plain ordinal Biclustering", {
+  res <- Biclustering(J35S500, ncls = 5, nfld = 5, method = "B", maxiter = 200)
+  expect_true(is.na(res$estimation))
+})
+
+test_that("isotonic ordinal Biclustering converges and FRP sums to 1", {
+  expect_true(result_ord_iso$converge)
+  expect_equal(dim(result_ord_iso$FRP), c(5, 5, 5))
+  probsum <- apply(result_ord_iso$FRP, c(1, 2), sum)
+  expect_true(all(abs(probsum - 1) < 1e-8))
+})
+
+test_that("isotonic ordinal Biclustering enforces stochastic order in every field", {
+  # For each field, the upper-cumulative (boundary) probability at every
+  # threshold must be non-decreasing across ranks -- this is the genuine
+  # stochastic-order restriction the GTM path does not impose.
+  nfld <- dim(result_ord_iso$FRP)[1]
+  ncls <- dim(result_ord_iso$FRP)[2]
+  maxQ <- dim(result_ord_iso$FRP)[3]
+  worst <- 0
+  for (f in 1:nfld) {
+    S <- t(sapply(1:ncls, function(c) {
+      rev(cumsum(rev(result_ord_iso$FRP[f, c, ])))[-1]
+    })) # ncls x (maxQ-1): P(>= q) per rank
+    worst <- max(worst, max(S[-ncls, , drop = FALSE] - S[-1, , drop = FALSE]))
+  }
+  # violations are bounded by the dual solver tolerance, not exactly zero
+  expect_lt(worst, 1e-3)
+})
+
+test_that("isotonic ordinal expected scores are monotone across ranks", {
+  nfld <- dim(result_ord_iso$FRP)[1]
+  ncls <- dim(result_ord_iso$FRP)[2]
+  maxQ <- dim(result_ord_iso$FRP)[3]
+  for (f in 1:nfld) {
+    esp <- sapply(1:ncls, function(c) sum((1:maxQ) * result_ord_iso$FRP[f, c, ]))
+    expect_true(all(diff(esp) >= -1e-6))
+  }
+  # monotone profiles satisfy the ordinal alignment conditions
+  expect_true(result_ord_iso$WOACflg)
+})
+
+test_that("isotonic ordinal estimation rejects unknown values", {
+  expect_error(
+    Biclustering(J35S500, ncls = 5, nfld = 5, method = "R", estimation = "bogus"),
+    "should be one of"
+  )
 })
 
 
@@ -244,7 +312,22 @@ test_that("nominal Biclustering FCBR is not allowed", {
 # rated = nominal推定 + 正答率によるクラスソート + 二値/名義二層適合度
 # ================================================================
 
-result_rated <- Biclustering(J35S5000, ncls = 3, nfld = 3, method = "R", maxiter = 200)
+# Rows are subset to keep the CRAN Windows check inside its time budget: 1.13.0
+# was rejected at "Overall checktime 11 min > 10 min". Only rows are dropped, so
+# the object keeps its class and its metadata (response.type, categories, CA),
+# and every assertion below is structural -- class, convergence, dimensions,
+# sums, finiteness -- rather than a comparison against reference numbers.
+head_rows <- function(x, n) {
+  x$ID <- x$ID[seq_len(n)]
+  for (f in c("Q", "U", "Z")) {
+    if (!is.null(x[[f]])) x[[f]] <- x[[f]][seq_len(n), , drop = FALSE]
+  }
+  return(x)
+}
+
+result_rated <- Biclustering(head_rows(J35S5000, 1000),
+  ncls = 3, nfld = 3, method = "R", maxiter = 200
+)
 
 test_that("rated Biclustering returns correct class", {
   expect_s3_class(result_rated, "exametrika")
@@ -290,7 +373,7 @@ test_that("rated Biclustering has both binary and nominal fit indices", {
 
 test_that("rated Biclustering field/class counts", {
   # LFD sum may exceed nitems when field memberships have ties
-  expect_equal(sum(result_rated$LCD), 5000)
+  expect_equal(sum(result_rated$LCD), nrow(result_rated$Q))
   expect_equal(length(result_rated$LFD), 3)
   expect_equal(length(result_rated$LCD), 3)
 })
@@ -324,7 +407,7 @@ test_that("rated Biclustering Students table has rank-up/down odds", {
   expect_true("Rank-Up Odds" %in% colnames(result_rated$Students))
   expect_true("Rank-Down Odds" %in% colnames(result_rated$Students))
   expect_true("Estimate" %in% colnames(result_rated$Students))
-  expect_equal(nrow(result_rated$Students), 5000)
+  expect_equal(nrow(result_rated$Students), nrow(result_rated$Q))
 })
 
 test_that("rated Biclustering has FieldAnalysis", {
@@ -347,10 +430,18 @@ test_that("rated Biclustering log_lik fields exist", {
 })
 
 test_that("rated Biclustering backward compatibility fields", {
-  expect_equal(result_rated$Nclass, result_rated$n_class)
-  expect_equal(result_rated$Nfield, result_rated$n_field)
-  expect_equal(result_rated$N_Cycle, result_rated$n_cycle)
-  expect_equal(result_rated$LogLik, result_rated$log_lik)
+  # 2.0.0 で削除: $Nclass はもう無く，$n_class だけが残る
+  expect_null(result_rated$Nclass)
+  expect_false(is.null(result_rated$n_class))
+  # 2.0.0 で削除: $Nfield はもう無く，$n_field だけが残る
+  expect_null(result_rated$Nfield)
+  expect_false(is.null(result_rated$n_field))
+  # 2.0.0 で削除: $N_Cycle はもう無く，$n_cycle だけが残る
+  expect_null(result_rated$N_Cycle)
+  expect_false(is.null(result_rated$n_cycle))
+  # 2.0.0 で削除: $LogLik はもう無く，$log_lik だけが残る
+  expect_null(result_rated$LogLik)
+  expect_false(is.null(result_rated$log_lik))
 })
 
 test_that("rated Biclustering print works", {

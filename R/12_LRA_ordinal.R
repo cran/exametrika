@@ -3,9 +3,17 @@
 #' \code{LRA.ordinal} analyzes ordered categorical data with multiple thresholds,
 #' such as Likert-scale responses or graded items.
 #'
+#' @param method Estimation method. One of "isotonic" (order-restricted MAP;
+#'   rank ordering imposed in the M-step by the Fenchel-dual stochastic-order
+#'   solver, no filter) or "GTM" (Gaussian Topographic Mapping; filter
+#'   smoothing). Default is "isotonic".
+#' @param alpha Dirichlet concentration for the category probabilities, used by
+#'   \code{method = "isotonic"} (the polytomous analogue of the binary
+#'   \code{beta1}/\code{beta2}). \code{alpha = 1} gives the maximum-likelihood
+#'   (flat-prior) estimate. Default is 1.
 #' @param trapezoidal Specifies the height of both tails when using a trapezoidal
 #' prior distribution. Must be less than 1/nrank. The default value is 0, which
-#' results in a uniform prior distribution.
+#' results in a uniform prior distribution. Used by \code{method = "GTM"}.
 #' @param eps Convergence threshold for parameter updates. Default is 1e-4.
 #'
 #' @return
@@ -47,11 +55,18 @@
 #'
 LRA.ordinal <- function(U,
                         nrank = 2,
+                        method = "isotonic",
                         mic = FALSE,
                         maxiter = 100,
                         trapezoidal = 0,
+                        alpha = 1,
                         eps = 1e-4,
                         verbose = FALSE, ...) {
+  ## check method
+  if (method != "isotonic" & method != "GTM") {
+    stop("The method must be either 'isotonic' or 'GTM'.")
+  }
+
   ## check trapezoidal prior
   if (trapezoidal > 0) {
     if (trapezoidal > 1 / nrank) {
@@ -90,21 +105,8 @@ LRA.ordinal <- function(U,
   # number of categories excluding missing
   ncat <- sapply(category, length)
 
-  ## Check for mixed category counts
-  ## LRA.ordinal uses fixed-stride matrix indexing (nitems * max(ncat)) that
-
-  ## assumes all items have the same number of categories. Mixed category counts
-  ## cause dimension mismatches in the saturation/restricted model matrices.
-  if (length(unique(ncat)) > 1) {
-    stop(
-      "LRA.ordinal does not support items with different numbers of categories.\n",
-      "  Found category counts: ", paste(unique(ncat), collapse = ", "),
-      " across items.\n",
-      "  All items must have the same number of response categories.\n",
-      "  Note: LRA.rated supports mixed category counts via its list-based design.\n",
-      "  Consider using Biclustering.ordinal, which also supports mixed categories."
-    )
-  }
+  design0 <- sapply(1:nitems, function(j) sum(ncat[1:j]))
+  design1 <- cbind(design0 - ncat + 1, design0)
 
   # Frequency table of categories
   catfreq999 <- lapply(seq_len(nitems), function(j) table(U$Q[, j]))
@@ -113,7 +115,7 @@ LRA.ordinal <- function(U,
 
   UU <- array(NA, dim = c(nobs, nitems, max(ncat)))
   YY <- array(0, dim = c(nobs, nitems, max(ncat) - 1))
-  uuMat <- matrix(NA, nrow = nobs, ncol = nitems * max(ncat))
+  uuMat <- matrix(NA, nrow = nobs, ncol = sum(ncat))
   for (i in 1:nobs) {
     for (j in 1:nitems) {
       for (k in 1:ncat[j]) {
@@ -123,12 +125,13 @@ LRA.ordinal <- function(U,
         YY[i, j, k - 1] <- ifelse((U$Z[i, j] * U$Q[i, j]) >= category[[j]][k], 1, 0)
       }
     }
-    uuMat[i, ] <- as.vector(t(UU[i, , ]))
   }
 
+  for (j in 1:nitems) {
+    uuMat[, design1[j, 1]:design1[j, 2]] <- UU[, j, 1:ncat[j]]
+  }
 
-  quantileScore <- quantile(score, probs = (1:(nquan - 1)) / nquan)
-  quantileRank <- rowSums(outer(score, quantileScore, ">")) + 1
+  quantileRank <- score_groups(score, nquan)
 
 
   quanRefmat <- array(NA, dim = c(nitems, max(ncat) - 1, nquan))
@@ -140,6 +143,9 @@ LRA.ordinal <- function(U,
       catquanRefmat[j, , q] <- apply(UU[quantileRank == q, j, ], 2, sum) / apply(U$Z[quantileRank == q, ], 2, sum)[j]
     }
   }
+  # A score group can come out empty; borrow from the nearest one that did not
+  quanRefmat <- fill_empty_groups(quanRefmat)
+  catquanRefmat <- fill_empty_groups(catquanRefmat)
 
 
   ## Category Quantile Report
@@ -152,7 +158,7 @@ LRA.ordinal <- function(U,
     categories <- dimnames(catfreq[[i]])[[1]]
     ratios <- as.vector(catfreq[[i]] / zzzTotal[i])
 
-    ref_mat[((i - 1) * ncat[i] + 1):((i * ncat[i])), ] <- catquanRefmat[i, , ]
+    ref_mat[design1[i, 1]:design1[i, 2], ] <- catquanRefmat[i, 1:ncat[i], ]
 
     item_data <- data.frame(
       item = item_name,
@@ -195,9 +201,6 @@ LRA.ordinal <- function(U,
     return(matrix)
   }
 
-  design0 <- sapply(1:nitems, function(j) sum(ncat[1:j]))
-  design1 <- cbind(design0 - ncat[1] + 1, design0)
-
   design2 <- lapply(1:nitems, function(j) {
     seq(design1[j, 1], design1[j, 2])
   })
@@ -236,10 +239,9 @@ LRA.ordinal <- function(U,
   refbox111_satu[, 2:max(ncat), ] <- refbox_satu
   refbox000_satu[, 1:(max(ncat) - 1), ] <- refbox_satu
   catrefbox_satu <- refbox111_satu - refbox000_satu
-  catRefMat_satu <- matrix(0, nrow = (nitems * max(ncat)), ncol = nitems)
+  catRefMat_satu <- matrix(0, nrow = sum(ncat), ncol = nitems)
   for (i in 1:nitems) {
-    l <- (i - 1) * ncat[i] + 1
-    catRefMat_satu[l:(l + ncat[i] - 1), ] <- catrefbox_satu[i, , ]
+    catRefMat_satu[design1[i, 1]:design1[i, 2], ] <- catrefbox_satu[i, 1:ncat[i], ]
   }
   ## EM Algorithm
   if (verbose) {
@@ -250,19 +252,20 @@ LRA.ordinal <- function(U,
   while (FLG) {
     old_log_like_satu <- ij_log_lik_satu
     ## Estep
-    nume_satu <- exp(uuMat %*% log(catRefMat_satu + const))
-    denom_satu <- rowSums(nume_satu)
-    rankProf_satu <- nume_satu / denom_satu
+    ll_satu <- uuMat %*% log(catRefMat_satu + const)
+    rankProf_satu <- row_softmax(ll_satu)
 
     ## Mstep
     refMatcore_satu <- t(uuMat) %*% rankProf_satu
     refMat111_satu <- design6 %*% refMatcore_satu / design5 %*% refMatcore_satu
-    delete_rows <- design0 - ncat[1] + 1
-    refMat_satu <- refMat111_satu[-delete_rows, ]
     refMat000_satu <- rbind(refMat111_satu[-1, ], refMat111_satu[1, ])
     refMat000_satu[design0, ] <- 0
     catRefMat_satu <- refMat111_satu - refMat000_satu
     ### Log Lik for Saturation Model
+    # ここは往復のまま残す。const を外すと値が大きく動き(exp(ll) < const の
+    # 場面では log(const) に張り付いていた)、Mathematica 参照値と食い違う。
+    # 荘島実装の挙動そのものなので、直すなら別件として承認を取る。
+    nume_satu <- exp(ll_satu)
     log_lik_satu <- sum(rankProf_satu * log(nume_satu + const))
     ij_log_lik_satu <- log_lik_satu / nitems / nobs
 
@@ -297,9 +300,6 @@ LRA.ordinal <- function(U,
     refMat111_satu <- t(apply(refMat111_satu, 1, sort))
   }
 
-  delete_rows <- design0 - ncat[1] + 1
-  refMat_satu <- refMat111_satu[-delete_rows, ]
-
   refMat000_satu <- rbind(refMat111_satu[-1, ], refMat111_satu[1, ])
   refMat000_satu[design0, ] <- 0
 
@@ -324,17 +324,13 @@ LRA.ordinal <- function(U,
   refBox000[, 1:(max(ncat) - 1), ] <- refBox
   catRefBox <- refBox111 - refBox000
 
-  refMat <- matrix(0, nrow = nitems * (max(ncat) - 1), nrank)
-  refMat111 <- matrix(0, nrow = nitems * (max(ncat)), nrank)
-  refMat000 <- matrix(0, nrow = nitems * (max(ncat)), nrank)
-  catRefMat <- matrix(0, nrow = nitems * (max(ncat)), nrank)
+  refMat111 <- matrix(0, nrow = sum(ncat), nrank)
+  refMat000 <- matrix(0, nrow = sum(ncat), nrank)
+  catRefMat <- matrix(0, nrow = sum(ncat), nrank)
   for (i in 1:nitems) {
-    l <- (i - 1) * (max(ncat) - 1) + 1
-    refMat[l:(l + max(ncat) - 2), ] <- refBox[i, , ]
-    m <- (i - 1) * (max(ncat)) + 1
-    refMat111[m:(m + max(ncat) - 1), ] <- refBox111[i, , ]
-    refMat000[m:(m + max(ncat) - 1), ] <- refBox000[i, , ]
-    catRefMat[m:(m + max(ncat) - 1), ] <- catRefBox[i, , ]
+    refMat111[design1[i, 1]:design1[i, 2], ] <- refBox111[i, 1:ncat[i], ]
+    refMat000[design1[i, 1]:design1[i, 2], ] <- refBox000[i, 1:ncat[i], ]
+    catRefMat[design1[i, 1]:design1[i, 2], ] <- catRefBox[i, 1:ncat[i], ]
   }
 
   ## EM Algorithm
@@ -346,30 +342,45 @@ LRA.ordinal <- function(U,
   while (FLG) {
     old_log_like <- ij_log_lik
     ## Estep
-    nume <- exp(uuMat %*% log(catRefMat + const) + logprior_NQmat)
-    denom <- rowSums(nume)
-    rankProf <- nume / denom
+    llmat <- uuMat %*% log(catRefMat + const) + logprior_NQmat
+    rankProf <- row_softmax(llmat)
 
-    # Filtering
-    refMatcore <- t(uuMat) %*% rankProf %*% Fil
-    refMat111 <- design6 %*% refMatcore / design5 %*% refMatcore
+    if (method == "isotonic") {
+      # Order-restricted MAP per item (Fenchel dual; no filter)
+      ecount <- t(uuMat) %*% rankProf
+      for (j in 1:nitems) {
+        rows_j <- design1[j, 1]:design1[j, 2]
+        Mcount <- t(ecount[rows_j, , drop = FALSE]) + (alpha - 1)
+        # Own iteration budget; see the note in Biclustering.ordinal().
+        Pj <- iso_dual_map(Mcount, tol = 1e-6)
+        catRefMat[rows_j, ] <- t(Pj)
+        refMat111[rows_j, ] <- apply(Pj, 1, function(pr) rev(cumsum(rev(pr))))
+      }
+    } else {
+      # GTM: filter smoothing
+      refMatcore <- t(uuMat) %*% rankProf %*% Fil
+      refMat111 <- design6 %*% refMatcore / design5 %*% refMatcore
 
-    if (sum(refMat111[1, ]) > sum(refMat111[nrank, ])) {
-      refMat111 <- refMat111[, ncol(refMat111):1]
+      if (sum(refMat111[1, ]) > sum(refMat111[nrank, ])) {
+        refMat111 <- refMat111[, ncol(refMat111):1]
+      }
+
+      if (mic == 1) {
+        refMat111 <- t(apply(refMat111, 1, sort))
+      }
+
+      refMat000 <- rbind(refMat111[2:nrow(refMat111), ], rep(0, nrank))
+      refMat000[design0, ] <- 0
+      catRefMat <- refMat111 - refMat000
     }
 
-    if (mic == 1) {
-      refMat111 <- t(apply(refMat111, 1, sort))
-    }
-
-    delete_rows <- sapply(1:nitems, function(j) design0[j] - ncat[1] + 1)
-    refMat <- refMat111[-delete_rows, ]
-
-    refMat000 <- rbind(refMat111[2:nrow(refMat111), ], rep(0, nrank))
-    refMat000[design0, ] <- 0
-    catRefMat <- refMat111 - refMat000
-
-    log_lik <- sum(rankProf * log(nume))
+    # 期待対数事後は対数のまま足す。exp() してから log() で戻す往復は代数的に
+    # 恒等だが、その途中でアンダーフローする: 2000人 x 60項目 x 5カテゴリの
+    # 規模だと ll の要素が -700 を下回り、exp() が 0 に落ちて log(0) = -Inf、
+    # 0 * -Inf = NaN となって収束判定の if が NA で落ちる。const を足した版は
+    # 落ちない代わりに log(const) という無関係な定数に化けるので、黙って
+    # 間違った値で回り続ける。
+    log_lik <- sum(rankProf * llmat)
     ij_log_lik <- log_lik / nitems / nobs
 
     iter <- iter + 1
@@ -394,9 +405,7 @@ LRA.ordinal <- function(U,
 
 
   # results ---------------------------------------------------------
-  nume <- exp(uuMat %*% log(catRefMat + const) + logprior_NQmat)
-  denom <- rowSums(nume)
-  rankProf <- nume / denom
+  rankProf <- row_softmax(uuMat %*% log(catRefMat + const) + logprior_NQmat)
 
   ## Item - Prob report
   boundary_report <- as.data.frame(refMat111)
@@ -448,7 +457,12 @@ LRA.ordinal <- function(U,
     }
   }
 
-  rankQuanDist <- unname(table(rankmemb, quantileRank))
+  # An empty score group must still appear as a column: table() drops unused
+  # levels, and the row/column names assigned below assume all nrank of them.
+  rankQuanDist <- unname(table(
+    factor(rankmemb, levels = seq_len(nrank)),
+    factor(quantileRank, levels = seq_len(nrank))
+  ))
   membQuanDist <- matrix(0, nrow = nrank, ncol = nquan)
   rho2 <- cor(rankmemb, quantileRank, method = "spearman")
   for (q in 1:nquan) {
@@ -459,14 +473,24 @@ LRA.ordinal <- function(U,
 
   # Fit Indices -----------------------------------------------------
 
-  itemdf <- (ncat - 1) * (nitems - sum(diag(Fil)))
+  if (method == "isotonic") {
+    # shape-restricted df per item: number of distinct boundary values
+    # (ties from rank pooling / adjacent-category equality reduce the count).
+    # Benchmark has nitems saturated groups per threshold, so the model df is
+    # (ncat - 1) * nitems minus the free (distinct) boundary levels.
+    item_free <- sapply(1:nitems, function(j) {
+      rows_j <- (design1[j, 1] + 1):design1[j, 2]
+      length(unique(round(as.vector(refMat111[rows_j, , drop = FALSE]), 10)))
+    })
+    itemdf <- (ncat - 1) * nitems - item_free
+  } else {
+    itemdf <- (ncat - 1) * (nitems - sum(diag(Fil)))
+  }
   testdf <- sum(itemdf)
   null_itemdf <- (ncat - 1) * (nitems - 1)
   null_testdf <- sum(null_itemdf)
 
-  rankProf_satu_num <- exp(uuMat %*% log(catRefMat_satu + const))
-  rankProf_satu_denom <- rowSums(rankProf_satu_num)
-  rankProf_satu <- rankProf_satu_num / rankProf_satu_denom
+  rankProf_satu <- row_softmax(uuMat %*% log(catRefMat_satu + const))
   Rank_satu <- apply(rankProf_satu, 1, which.max)
   Rank_satu01 <- sign(rankProf_satu - apply(rankProf_satu, 1, max)) + 1
 
@@ -489,8 +513,10 @@ LRA.ordinal <- function(U,
   satu_itemll2 <- design4 %*% colSums(t(satuggg_jq2 * log(catRefMat_satu + const)))
 
   # Null item log-likelihood
-  catfreqMat <- matrix(unlist(catfreq), ncol = ncat, byrow = T)
-  null_itemll <- colSums(t(catfreqMat * log(catfreqMat / zzzTotal + const)))
+  null_itemll <- sapply(seq_len(nitems), function(j) {
+    f <- as.vector(catfreq[[j]])
+    sum(f * log(f / zzzTotal[j] + const))
+  })
 
   # Model chi-square
   # model_itemchisq1 <- pmax(0.000001, pmin(2 * (satu_itemll1 - model_itemll1), 1000000000))
@@ -552,6 +578,7 @@ LRA.ordinal <- function(U,
 
   ret <- structure(list(
     U = U,
+    method = method,
     mic = mic,
     testlength = NCOL(U$Q),
     msg = "Rank",
@@ -575,10 +602,7 @@ LRA.ordinal <- function(U,
     TestFitIndices = TestFitIndices,
     ScoreReport = ScoreReport,
     ItemReport = ItemReport,
-    CatQuant = SelectRatioTable,
-    # Deprecated fields (for backward compatibility)
-    Nrank = nrank,
-    N_Cycle = iter
+    CatQuant = SelectRatioTable
   ), class = c("exametrika", "LRAordinal"))
   return(ret)
 }

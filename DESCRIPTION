@@ -1,7 +1,7 @@
 Package: exametrika
 Type: Package
-Title: Test Theory Analysis and Biclustering
-Version: 1.15.0
+Title: Test Data Engineering
+Version: 2.0.0
 Authors@R: 
     person("Koji Kosugi", , , "kosugitti@gmail.com", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0001-5816-0099"))
@@ -26,16 +26,17 @@ BuildVignettes: true
 URL: https://kosugitti.github.io/exametrika/,
         https://github.com/kosugitti/exametrika
 BugReports: https://github.com/kosugitti/exametrika/issues
-RoxygenNote: 7.3.3
 Suggests: knitr, rmarkdown, testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
+Config/testthat/parallel: true
 Depends: R (>= 4.1.0)
 Imports: mvtnorm, igraph, Rcpp (>= 1.0.7)
 LinkingTo: Rcpp
+Config/roxygen2/version: 8.0.0
 NeedsCompilation: yes
-Packaged: 2026-07-15 03:43:56 UTC; newton
+Packaged: 2026-08-20 01:22:39 UTC; newton
 Author: Koji Kosugi [aut, cre] (ORCID: <https://orcid.org/0000-0001-5816-0099>)
 Maintainer: Koji Kosugi <kosugitti@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-07-15 05:50:02 UTC
+Date/Publication: 2026-08-20 10:50:02 UTC

@@ -20,10 +20,11 @@ Biclustering(U, ...)
   ncls = 2,
   nfld = 2,
   method = "B",
+  estimation = "isotonic",
   conf = NULL,
   conf_class = NULL,
   mic = FALSE,
-  maxiter = 100,
+  maxiter = 1000,
   verbose = FALSE,
   beta1 = 1,
   beta2 = 1,
@@ -37,7 +38,7 @@ Biclustering(U, ...)
   conf = NULL,
   conf_class = NULL,
   mic = FALSE,
-  maxiter = 100,
+  maxiter = 1000,
   verbose = FALSE,
   alpha = 1,
   ...
@@ -48,10 +49,11 @@ Biclustering(U, ...)
   ncls = 2,
   nfld = 2,
   method = "B",
+  estimation = "isotonic",
   conf = NULL,
   conf_class = NULL,
   mic = FALSE,
-  maxiter = 100,
+  maxiter = 1000,
   verbose = FALSE,
   alpha = 1,
   ...
@@ -96,6 +98,19 @@ ordinal data)
 rate)
 }}
 
+\item{estimation}{Estimation method for the Field Reference Profiles under
+Ranklustering (\code{method = "R"}); ignored for plain Biclustering, whose
+classes are unordered:
+\itemize{
+\item "isotonic": order-restricted estimation, imposing the rank ordering
+directly in the M-step (default). For binary data this is a weighted
+pool-adjacent-violators step, which under the default flat prior is the
+exact order-restricted MLE (Ayer et al. 1955); for ordinal data it is
+the stochastic-order-restricted multinomial MAP solved by the
+Fenchel-dual algorithm (El Barmi & Dykstra 1994).
+\item "GTM": the original filter-based smoothing of Shojima (2012).
+}}
+
 \item{conf}{Confirmatory parameter for pre-specified field assignments. Can be either:
 \itemize{
 \item A vector with items and corresponding fields in sequence
@@ -135,10 +150,10 @@ An object of class "exametrika" and "Biclustering" containing:
 \item{mic}{Logical value indicating whether monotonicity constraint was applied}
 \item{testlength}{Number of items in the test}
 \item{nobs}{Number of examinees in the dataset}
-\item{Nclass}{Number of latent classes/ranks specified}
-\item{Nfield}{Number of latent fields specified}
-\item{N_Cycle}{Number of EM iterations performed}
-\item{converge}{Logical value indicating wheter the algorithm converged within maxiter iterasions}
+\item{n_class}{Number of latent classes/ranks specified}
+\item{n_field}{Number of latent fields specified}
+\item{n_cycle}{Number of EM iterations performed}
+\item{converge}{Logical value indicating whether the algorithm converged within maxiter iterations}
 \item{LFD}{Latent Field Distribution - counts of items assigned to each field}
 \item{LRD/LCD}{Latent Rank/Class Distribution - counts of examinees assigned to each class/rank}
 \item{FRP}{Field Reference Profile matrix - probability of correct response for each field-class combination}
