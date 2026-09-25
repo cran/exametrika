@@ -1,3 +1,139 @@
+# exametrika 2.1.0
+
+A minor release. The estimates returned by `LRA(method = "SOM")` change, so the
+fixes below could not ship as a patch. They came out of reading the R code
+against the Mathematica routine it was ported from
+(`Module_LRA.wl`): the port had grown a `seed` argument and a convergence
+report that the original never had, and had moved the monotonicity sort to the
+end of each epoch.
+
+Released on GitHub first; the CRAN submission follows once the one-month cadence
+since 2.0.0 (accepted 2026-08-20) has passed.
+
+## Bug Fixes
+
+- **Ordinal biclustering rolled back only half of its state.** When an EM sweep
+  failed to improve the likelihood, `Biclustering()` on ordinal data restored the
+  category reference array `BCRM` but left the boundary array `BBRM` at the
+  rejected values. The two are then one iteration apart, and since
+  `test_log_lik` is computed from `BCRM` while the shape-restricted parameter
+  count is read off `BBRM`, the reported `nparam`, `df`, `AIC`, `BIC` and `CAIC`
+  could describe a different iterate than the likelihood does. It affects
+  `method = "R"` with `estimation = "isotonic"` only; the other branches derive
+  the count from the filter matrix or the rank and field counts instead, and the
+  binary implementation rolls back the array it later reads. Both arrays are now
+  saved and restored together. In practice the rejected sweep differs from the
+  accepted one by around 1e-10 by the time the branch is reached, so the counted
+  number of distinct boundary levels -- and hence every figure above -- came out
+  unchanged in the cases tested; the fix removes the inconsistency rather than a
+  visible error.
+
+- **The SOM method reused one frozen presentation order whenever `seed` was
+  given.** `somclus()` reseeded inside the epoch loop with `set.seed(seed)`, so
+  every epoch presented the respondents in exactly the same order. Online
+  learning relies on that order being redrawn: with it fixed, the bias of one
+  particular ordering is never averaged out. The original Mathematica routine
+  reseeds each epoch with `SeedRandom[Total[uuu] + somt]`, and the `seed = NULL`
+  path already matched it; only the user-supplied seed was affected. The epoch
+  number is now added to the seed, so a run stays reproducible while the order
+  changes from epoch to epoch. Estimates from `method = "SOM"` with an explicit
+  `seed` change accordingly.
+
+- **`mic = TRUE` sorted the rank reference matrix once per epoch instead of once
+  per respondent.** The original applies `Sort /@ refmat` immediately after each
+  respondent is presented, which changes the matrix that decides the next
+  winner; deferring it to the end of the epoch is a different algorithm, not a
+  cheaper form of the same one. The sort -- and the `conf` constraint alongside
+  it -- now runs after every respondent. Estimates from `method = "SOM"` with
+  `mic = TRUE` or `conf` change accordingly.
+
+- **Ties in the SOM winner search are resolved toward the larger rank**, as in
+  the original (`Sort[Transpose[{mlrank, clsnum}]][[-1]]`). `which.max()` had
+  been picking the smaller rank.
+
+- **`method = "SOM"` no longer warns that it may not have converged.** SOM runs
+  an annealing schedule for `maxiter` epochs and has no convergence criterion --
+  neither does the original implementation -- so finishing the schedule is
+  normal termination. The warning fired on every default run and `converge` was
+  always `FALSE`, which left no way to tell a healthy run from a broken one.
+  `converge` is now `TRUE` unless `BIC.check` early stopping was requested and
+  failed to trigger within ten times `maxiter`. The messages on that path, and
+  the documentation of `BIC.check`, now describe it as early stopping rather
+  than a convergence test; its threshold is unchanged.
+
+- **`LRA(method = "SOM")` no longer overwrites the caller's random number
+  stream.** It reseeds once per epoch and never restored `.Random.seed`, so any
+  simulation that called it silently lost its own stream. The state is now
+  restored on exit.
+
+## Performance
+
+- **The SOM inner loop moved to C++** (`src/som_core.cpp`). One epoch of online
+  updates -- winner search, neighbourhood update, `conf`, `mic` and the prior
+  update -- now runs in compiled code, while the presentation order is still
+  drawn in R so that `set.seed()` keeps governing reproducibility. On
+  `J15S500` with `nrank = 6` and `maxiter = 1000`, estimation went from 5.2 s to
+  1.9 s with `mic = FALSE`, and from 103.5 s to 2.6 s with `mic = TRUE` (the
+  per-respondent sort that `mic` now requires would otherwise have made it
+  twenty times slower). The rank posterior is also computed once after the
+  schedule instead of every epoch, since only `BIC.check` reads it in between.
+
+## Internal
+
+- `grconvertX()`, `grconvertY()` and `rasterImage()`, used by the rasterised
+  Array plot since 2.0.1, are now imported from **graphics** in `NAMESPACE`.
+  This clears the `R CMD check` note about undeclared global functions.
+
+# exametrika 2.0.1
+
+A patch release: two bug fixes, no new features and no change to any estimate.
+Released on GitHub first; the CRAN submission follows once the one-month cadence
+since 2.0.0 (accepted 2026-08-20) has passed.
+
+## Bug Fixes
+
+- **Respondent IDs and item labels now reach every model's output.** They
+  survived only where the matrix a field happened to be derived from carried
+  dimnames, so which fields were labelled differed from model to model:
+  `Biclustering()` on ordinal data lost them completely (`FieldEstimated`,
+  `FieldMembership` and `ClassMembership` all came back as bare numbers), and
+  `ClassEstimated` was unnamed in every model, including the binary ones that
+  labelled everything else. The respondent axis was the more affected of the
+  two, which is the opposite of what the code looks like -- `Students` had its
+  row names set by hand, and nothing else did.
+
+  Labelling is now done once, in one place, immediately before each constructor
+  returns: respondent-indexed fields (`ClassEstimated`, `ClassMembership`,
+  `SmoothedMembership`, `Students`, `ability`, ...) take the IDs, item-indexed
+  fields (`FieldEstimated`, `FieldMembership`, ...) take the item labels, and the
+  membership matrices get column names (`Class1`/`Rank1`..., `Field1`...).
+  `dataFormat()` also puts the IDs on the rows of `U`, `Q` and `Z`; it already
+  put the item labels on the columns.
+
+  `FieldAnalysis` is deliberately excluded: its rows are sorted by correct
+  response rate and field, so attaching labels positionally would attach the
+  wrong ones. It keeps the labels it inherits, in its own order.
+
+  Only names are added -- no estimate changes.
+
+- **`plot(type = "Array")` no longer washes rows out to white.** Every cell was
+  drawn as a `rect()` with a white border, and a border cannot be thinner than
+  one device pixel: once the respondents outnumbered the pixels available to
+  them, the borders covered the fill. Which rows disappeared depended on where
+  the cell boundaries fell on the pixel grid, so the loss came out mottled
+  rather than uniform. Measured on an all-black 400x600 plot, mean luminance
+  rose from 0.01 at 50 rows to 0.29 at 821 rows -- roughly a third of the ink
+  gone at the sizes a real test data set reaches.
+
+## Performance
+
+- **The array plot is drawn as a single raster** (`rasterImage()`) instead of
+  one `rect()` call per cell. A 3,810 x 15 data set took 114,300 drawing calls
+  for the two panels and now takes two; the plot renders in 0.03 s. Cell
+  borders are drawn -- as grid lines, `nrows + ncols` of them rather than
+  `nrows * ncols` rectangles -- only when a cell is at least 6 device pixels on
+  both sides, which is where they can be seen without swallowing the cell.
+
 # exametrika 2.0.0
 
 The version number was raised to 2.0.0 because the EM convergence fix below
@@ -416,6 +552,12 @@ that is an input alias for the criterion name, not a field on the result.
   stays readable.
 
 ## Internal (no user-visible behavior change)
+
+- Spell-checking became usable again: `tools/spell_check.R` skips the
+  Japanese vignette (morphemes are permanent hunspell noise) and `NEWS.md`
+  (history is not edited), `inst/WORDLIST` was brought up to date (136 ->
+  228 words), and `release_bullets()` reminds every release to keep it so.
+  Zero findings is now the normal state, so the next finding is a real typo.
 
 - Restructured the test suite around a two-tier policy: CRAN runs tiny
   Mathematica-verified fixtures plus a smoke test per user-facing function,
